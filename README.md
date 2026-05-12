@@ -5,7 +5,7 @@
 ## 形态
 
 - 浏览器前端：`npm run dev` 或 `npm run build` 后部署 `dist/`。
-- 浏览器 + 代理：`npm run proxy` 启动简单 RSS 代理，在设置里填写 `http://127.0.0.1:8787/rss?url={url}`。
+- 浏览器 + 代理：`npm run proxy` 启动本地/服务器 RSS 代理，或把 `server/proxy.js` 部署为 Cloudflare Worker。
 - 桌面 App：Electron 版本通过主进程抓取 RSS，不需要单独运行代理。
 
 ## 本地开发
@@ -21,12 +21,65 @@ npm run dev
 npm run proxy
 ```
 
+默认监听 `0.0.0.0:8787`，本机使用：
+
+```text
+http://127.0.0.1:8787/rss?url={url}
+```
+
+部署到服务器时，可以在防火墙放行端口后使用：
+
+```text
+http://服务器地址:8787/rss?url={url}
+```
+
+如果前端页面通过 HTTPS 访问，浏览器会拦截 HTTP 代理请求。生产环境建议使用 Cloudflare Worker 代理，天然是 HTTPS。
+
 可选环境变量：
 
+- `HOST`：Node 代理监听地址，默认 `0.0.0.0`。
 - `PORT`：代理端口，默认 `8787`。
 - `ALLOW_ORIGIN`：CORS 允许来源，默认 `*`。
 - `ALLOWED_HOSTS`：逗号分隔的 RSS 主机白名单，留空表示允许所有 http/https 主机。
 - `MAX_BYTES`：最大响应体字节数，默认 8 MB。
+
+## Cloudflare Worker 代理
+
+`server/proxy.js` 是 Cloudflare Workers 入口，同时被本地 Node 代理复用。首次部署前先登录 Wrangler：
+
+```bash
+npx wrangler login
+```
+
+部署：
+
+```bash
+npm run proxy:deploy
+```
+
+本地用 Wrangler 调试 Worker：
+
+```bash
+npm run proxy:dev
+```
+
+部署后，Wrangler 会输出 Worker 地址，通常类似：
+
+```text
+https://rss-reader-proxy.<你的 workers.dev 子域>.workers.dev
+```
+
+在 RSS Reader 的设置里把“代理模板”填成：
+
+```text
+https://rss-reader-proxy.<你的 workers.dev 子域>.workers.dev/rss?url={url}
+```
+
+Worker 配置在 `wrangler.jsonc`：
+
+- `ALLOW_ORIGIN`：建议生产环境改成你的前端地址，例如 `https://zijian-z.github.io` 或你的 Pages 地址。
+- `ALLOWED_HOSTS`：留空表示允许代理所有 http/https RSS 地址；如果要限制来源，可填逗号分隔的主机名。
+- `MAX_BYTES`：最大响应体字节数，默认 `8388608`。
 
 桌面开发：
 

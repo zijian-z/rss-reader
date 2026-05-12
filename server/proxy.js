@@ -1,39 +1,36 @@
-import http from "node:http";
-import { URL } from "node:url";
+const DEFAULT_MAX_BYTES = 8 * 1024 * 1024;
 
-const port = Number(process.env.PORT || 8787);
-const allowOrigin = process.env.ALLOW_ORIGIN || "*";
-const allowedHosts = parseAllowedHosts(process.env.ALLOWED_HOSTS || "");
-const maxBytes = Number(process.env.MAX_BYTES || 8 * 1024 * 1024);
+export default {
+  fetch(request, env = {}) {
+    return handleProxyRequest(request, env);
+  },
+};
 
-const server = http.createServer(async (request, response) => {
-  setCorsHeaders(response);
+export async function handleProxyRequest(request, env = {}) {
+  const config = readProxyConfig(env);
+  const requestUrl = new URL(request.url);
 
   if (request.method === "OPTIONS") {
-    response.writeHead(204);
-    response.end();
-    return;
+    return new Response(null, {
+      status: 204,
+      headers: corsHeaders(config),
+    });
   }
 
-  const requestUrl = new URL(request.url, `http://${request.headers.host || "localhost"}`);
-
   if (requestUrl.pathname === "/health") {
-    sendJson(response, 200, { ok: true });
-    return;
+    return jsonResponse({ ok: true }, 200, config);
   }
 
   if (requestUrl.pathname !== "/" && requestUrl.pathname !== "/rss") {
-    sendJson(response, 404, { error: "Not found" });
-    return;
+    return jsonResponse({ error: "Not found" }, 404, config);
   }
 
   if (request.method !== "GET") {
-    sendJson(response, 405, { error: "Only GET is supported" });
-    return;
+    return jsonResponse({ error: "Only GET is supported" }, 405, config);
   }
 
   try {
-    const feedUrl = validateFeedUrl(requestUrl.searchParams.get("url"));
+    const feedUrl = validateFeedUrl(requestUrl.searchParams.get("url"), config);
     const upstream = await fetch(feedUrl, {
       redirect: "follow",
       headers: {
@@ -44,44 +41,48 @@ const server = http.createServer(async (request, response) => {
     });
 
     if (!upstream.ok) {
-      sendJson(response, upstream.status, { error: `Upstream HTTP ${upstream.status}` });
-      return;
+      return jsonResponse({ error: `Upstream HTTP ${upstream.status}` }, upstream.status, config);
     }
 
     const contentLength = Number(upstream.headers.get("content-length") || 0);
-    if (contentLength > maxBytes) {
-      sendJson(response, 413, { error: "Feed is too large" });
-      return;
+    if (contentLength > config.maxBytes) {
+      return jsonResponse({ error: "Feed is too large" }, 413, config);
     }
 
     const body = await upstream.arrayBuffer();
-    if (body.byteLength > maxBytes) {
-      sendJson(response, 413, { error: "Feed is too large" });
-      return;
+    if (body.byteLength > config.maxBytes) {
+      return jsonResponse({ error: "Feed is too large" }, 413, config);
     }
 
-    response.writeHead(200, {
-      "content-type": upstream.headers.get("content-type") || "application/xml; charset=utf-8",
-      "cache-control": "no-store",
+    return new Response(body, {
+      status: 200,
+      headers: {
+        ...corsHeaders(config),
+        "content-type": upstream.headers.get("content-type") || "application/xml; charset=utf-8",
+        "cache-control": "no-store",
+      },
     });
-    response.end(Buffer.from(body));
   } catch (error) {
-    sendJson(response, 400, { error: error.message || "Proxy request failed" });
+    return jsonResponse({ error: error.message || "Proxy request failed" }, 400, config);
   }
-});
+}
 
-server.listen(port, () => {
-  console.log(`RSS proxy listening on http://127.0.0.1:${port}/rss?url=`);
-});
+export function readProxyConfig(env = {}) {
+  return {
+    allowOrigin: String(env.ALLOW_ORIGIN || "*"),
+    allowedHosts: parseAllowedHosts(env.ALLOWED_HOSTS || ""),
+    maxBytes: positiveNumber(env.MAX_BYTES, DEFAULT_MAX_BYTES),
+  };
+}
 
-function validateFeedUrl(value) {
+function validateFeedUrl(value, config) {
   const url = new URL(String(value || ""));
 
   if (!["http:", "https:"].includes(url.protocol)) {
     throw new Error("Only http and https URLs are allowed");
   }
 
-  if (allowedHosts.size > 0 && !allowedHosts.has(url.hostname)) {
+  if (config.allowedHosts.size > 0 && !config.allowedHosts.has(url.hostname.toLowerCase())) {
     throw new Error("Host is not allowed by ALLOWED_HOSTS");
   }
 
@@ -90,24 +91,34 @@ function validateFeedUrl(value) {
 
 function parseAllowedHosts(value) {
   return new Set(
-    value
+    String(value)
       .split(",")
       .map((host) => host.trim().toLowerCase())
       .filter(Boolean),
   );
 }
 
-function setCorsHeaders(response) {
-  response.setHeader("access-control-allow-origin", allowOrigin);
-  response.setHeader("access-control-allow-methods", "GET, OPTIONS");
-  response.setHeader("access-control-allow-headers", "content-type");
-  response.setHeader("vary", "origin");
+function positiveNumber(value, fallback) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
-function sendJson(response, statusCode, payload) {
-  response.writeHead(statusCode, {
-    "content-type": "application/json; charset=utf-8",
-    "cache-control": "no-store",
+function corsHeaders(config) {
+  return {
+    "access-control-allow-origin": config.allowOrigin,
+    "access-control-allow-methods": "GET, OPTIONS",
+    "access-control-allow-headers": "content-type",
+    vary: "origin",
+  };
+}
+
+function jsonResponse(payload, status, config) {
+  return new Response(JSON.stringify(payload), {
+    status,
+    headers: {
+      ...corsHeaders(config),
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": "no-store",
+    },
   });
-  response.end(JSON.stringify(payload));
 }
