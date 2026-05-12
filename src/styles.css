@@ -144,8 +144,7 @@ button {
   --accent-soft: rgba(251, 191, 36, 0.15);
 }
 
-.accent-button,
-.accent-icon-button {
+.accent-button {
   box-shadow: none !important;
 }
 
@@ -159,20 +158,29 @@ button {
   filter: brightness(0.96);
 }
 
-.accent-icon-button {
-  border: 1px solid color-mix(in srgb, var(--accent) 24%, transparent) !important;
-  background: var(--accent-soft) !important;
-  color: var(--accent) !important;
-}
-
-.accent-icon-button:hover {
-  background: color-mix(in srgb, var(--accent) 18%, transparent) !important;
-}
-
 [data-slot="base"][data-focus-visible="true"] {
   outline: 2px solid color-mix(in srgb, var(--accent) 42%, transparent) !important;
   outline-offset: 2px;
   box-shadow: none !important;
+}
+
+.app-tooltip {
+  z-index: 80;
+  padding: 6px 9px;
+  border: 1px solid color-mix(in srgb, var(--text) 16%, transparent);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--text) 92%, transparent);
+  color: var(--pane-bg);
+  font-size: 12px;
+  font-weight: 720;
+  line-height: 1.2;
+  box-shadow: 0 10px 24px rgba(24, 32, 38, 0.2);
+}
+
+:root[data-theme="dark"] .app-tooltip {
+  border-color: color-mix(in srgb, white 14%, transparent);
+  background: color-mix(in srgb, white 92%, transparent);
+  color: #11161b;
 }
 
 .mobile-switch {

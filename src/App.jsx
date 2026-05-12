@@ -548,6 +548,17 @@ function App() {
   );
 }
 
+function ActionTooltip({ children, label, placement = "top" }) {
+  return (
+    <Tooltip.Root delay={260} closeDelay={80}>
+      <Tooltip.Trigger>{children}</Tooltip.Trigger>
+      <Tooltip.Content className="app-tooltip" placement={placement} showArrow>
+        {label}
+      </Tooltip.Content>
+    </Tooltip.Root>
+  );
+}
+
 function SourcesPane({
   activeFilter,
   articles,
@@ -576,91 +587,124 @@ function SourcesPane({
       }`}
     >
       <div className="pane-rail" aria-label="订阅栏已折叠">
-        <Tooltip content="展开订阅栏" placement="right">
-          <Button isIconOnly variant="light" aria-label="展开订阅栏" onPress={onToggleCollapse}>
+        <ActionTooltip label="展开订阅栏" placement="right">
+          <Button
+            isIconOnly
+            variant="light"
+            aria-label="展开订阅栏"
+            title="展开订阅栏"
+            onPress={onToggleCollapse}
+          >
             <PanelLeftOpen size={18} />
           </Button>
-        </Tooltip>
-        <Tooltip content="刷新全部" placement="right">
+        </ActionTooltip>
+        <ActionTooltip label="刷新全部" placement="right">
           <Button
             isIconOnly
             variant="light"
             aria-label="刷新全部"
+            title="刷新全部"
             onPress={onRefreshAll}
             isDisabled={isRefreshing}
           >
             <RefreshCw size={18} className={isRefreshing ? "spin" : ""} />
           </Button>
-        </Tooltip>
-        <Tooltip content="添加订阅" placement="right">
+        </ActionTooltip>
+        <ActionTooltip label="添加订阅" placement="right">
           <Button
             isIconOnly
-            className="accent-icon-button"
-            variant="flat"
+            variant="light"
             aria-label="添加订阅"
+            title="添加订阅"
             onPress={onAdd}
           >
             <Plus size={18} />
           </Button>
-        </Tooltip>
-        <Tooltip content="全部已读" placement="right">
-          <Button isIconOnly variant="light" aria-label="全部已读" onPress={onMarkAllRead}>
+        </ActionTooltip>
+        <ActionTooltip label="全部已读" placement="right">
+          <Button
+            isIconOnly
+            variant="light"
+            aria-label="全部已读"
+            title="全部已读"
+            onPress={onMarkAllRead}
+          >
             <CheckCheck size={18} />
           </Button>
-        </Tooltip>
-        <Tooltip content="设置" placement="right">
-          <Button isIconOnly variant="light" aria-label="设置" onPress={onOpenSettings}>
+        </ActionTooltip>
+        <ActionTooltip label="设置" placement="right">
+          <Button
+            isIconOnly
+            variant="light"
+            aria-label="设置"
+            title="设置"
+            onPress={onOpenSettings}
+          >
             <Settings size={18} />
           </Button>
-        </Tooltip>
+        </ActionTooltip>
       </div>
 
       <div className="pane-body">
         <div className="pane-header sidebar-header source-toolbar">
           <div className="sidebar-actions">
-            <Tooltip content="刷新全部">
+            <ActionTooltip label="刷新全部">
               <Button
                 isIconOnly
                 variant="flat"
                 aria-label="刷新全部"
+                title="刷新全部"
                 onPress={onRefreshAll}
                 isDisabled={isRefreshing}
               >
                 <RefreshCw size={18} className={isRefreshing ? "spin" : ""} />
               </Button>
-            </Tooltip>
-            <Tooltip content="添加订阅">
+            </ActionTooltip>
+            <ActionTooltip label="添加订阅">
               <Button
                 isIconOnly
-                className="accent-icon-button"
                 variant="flat"
                 aria-label="添加订阅"
+                title="添加订阅"
                 onPress={onAdd}
               >
                 <Plus size={18} />
               </Button>
-            </Tooltip>
-            <Tooltip content="全部已读">
-              <Button isIconOnly variant="flat" aria-label="全部已读" onPress={onMarkAllRead}>
+            </ActionTooltip>
+            <ActionTooltip label="全部已读">
+              <Button
+                isIconOnly
+                variant="flat"
+                aria-label="全部已读"
+                title="全部已读"
+                onPress={onMarkAllRead}
+              >
                 <CheckCheck size={18} />
               </Button>
-            </Tooltip>
-            <Tooltip content="设置">
-              <Button isIconOnly variant="flat" aria-label="设置" onPress={onOpenSettings}>
+            </ActionTooltip>
+            <ActionTooltip label="设置">
+              <Button
+                isIconOnly
+                variant="flat"
+                aria-label="设置"
+                title="设置"
+                onPress={onOpenSettings}
+              >
                 <Settings size={18} />
               </Button>
-            </Tooltip>
-            <Tooltip content="折叠订阅栏">
+            </ActionTooltip>
+            <ActionTooltip label="折叠订阅栏">
               <Button
                 isIconOnly
                 className="desktop-only"
                 variant="flat"
                 aria-label="折叠订阅栏"
+                title="折叠订阅栏"
                 onPress={onToggleCollapse}
               >
                 <PanelLeftClose size={18} />
               </Button>
-            </Tooltip>
+            </ActionTooltip>
           </div>
         </div>
 
@@ -720,33 +764,36 @@ function SourcesPane({
                         ) : null}
                       </button>
                       <div className="feed-actions">
-                        <Tooltip content="刷新订阅" placement="right">
+                        <ActionTooltip label="刷新订阅" placement="right">
                           <button
                             type="button"
                             aria-label="刷新订阅"
+                            title="刷新订阅"
                             onClick={() => onRefreshFeed(feed.id)}
                           >
                             <RefreshCw size={14} />
                           </button>
-                        </Tooltip>
-                        <Tooltip content="编辑订阅" placement="right">
+                        </ActionTooltip>
+                        <ActionTooltip label="编辑订阅" placement="right">
                           <button
                             type="button"
                             aria-label="编辑订阅"
+                            title="编辑订阅"
                             onClick={() => onEditFeed(feed.id)}
                           >
                             <Edit3 size={14} />
                           </button>
-                        </Tooltip>
-                        <Tooltip content="删除订阅" placement="right">
+                        </ActionTooltip>
+                        <ActionTooltip label="删除订阅" placement="right">
                           <button
                             type="button"
                             aria-label="删除订阅"
+                            title="删除订阅"
                             onClick={() => onRemoveFeed(feed.id)}
                           >
                             <Trash2 size={14} />
                           </button>
-                        </Tooltip>
+                        </ActionTooltip>
                       </div>
                       {feed.error ? <p className="feed-error">{feed.error}</p> : null}
                     </div>
@@ -791,11 +838,17 @@ function ArticleListPane({
       }`}
     >
       <div className="pane-rail" aria-label="文章列表已折叠">
-        <Tooltip content="展开标题栏" placement="right">
-          <Button isIconOnly variant="light" aria-label="展开标题栏" onPress={onToggleCollapse}>
+        <ActionTooltip label="展开标题栏" placement="right">
+          <Button
+            isIconOnly
+            variant="light"
+            aria-label="展开标题栏"
+            title="展开标题栏"
+            onPress={onToggleCollapse}
+          >
             <PanelLeftOpen size={18} />
           </Button>
-        </Tooltip>
+        </ActionTooltip>
         <span className="rail-divider" />
         <List size={18} aria-hidden="true" />
       </div>
@@ -807,6 +860,7 @@ function ArticleListPane({
             variant="light"
             className="mobile-back"
             aria-label="返回"
+            title="返回"
             onPress={onBack}
           >
             <ChevronLeft size={19} />
@@ -815,17 +869,18 @@ function ArticleListPane({
             <span className="eyebrow">Articles</span>
             <h2>{sourceTitle}</h2>
           </div>
-          <Tooltip content="折叠标题栏">
+          <ActionTooltip label="折叠标题栏">
             <Button
               isIconOnly
               className="desktop-only"
               variant="flat"
               aria-label="折叠标题栏"
+              title="折叠标题栏"
               onPress={onToggleCollapse}
             >
               <PanelLeftClose size={18} />
             </Button>
-          </Tooltip>
+          </ActionTooltip>
         </div>
 
         <label className="search-box">
@@ -886,6 +941,7 @@ function ReaderPane({ article, feed, mobilePane, onBack, onToggleStar }) {
               variant="light"
               className="mobile-back"
               aria-label="返回"
+              title="返回"
               onPress={onBack}
             >
               <ChevronLeft size={19} />
@@ -895,17 +951,18 @@ function ReaderPane({ article, feed, mobilePane, onBack, onToggleStar }) {
               {article.publishedAt ? <time>{formatLongDate(article.publishedAt)}</time> : null}
             </div>
             <div className="reader-actions">
-              <Tooltip content={article.starred ? "取消星标" : "星标"}>
+              <ActionTooltip label={article.starred ? "取消星标" : "星标"}>
                 <Button
                   isIconOnly
                   variant={article.starred ? "solid" : "flat"}
                   color={article.starred ? "warning" : "default"}
                   aria-label={article.starred ? "取消星标" : "星标"}
+                  title={article.starred ? "取消星标" : "星标"}
                   onPress={() => onToggleStar(article.id)}
                 >
                   <Star size={18} fill={article.starred ? "currentColor" : "none"} />
                 </Button>
-              </Tooltip>
+              </ActionTooltip>
               {article.link ? (
                 <Button
                   as="a"
@@ -913,6 +970,7 @@ function ReaderPane({ article, feed, mobilePane, onBack, onToggleStar }) {
                   target="_blank"
                   rel="noreferrer"
                   variant="flat"
+                  title="打开原文"
                 >
                   原文
                 </Button>
@@ -1211,6 +1269,7 @@ function SettingsDialog({
                 />
                 <button
                   aria-label="删除文件夹"
+                  title="删除文件夹"
                   disabled={folderDrafts.length <= 1}
                   onClick={() => commitFolders(folderDrafts.filter((item) => item.id !== folder.id))}
                   type="button"
@@ -1305,7 +1364,7 @@ function Dialog({ children, onClose, title, wide = false }) {
       >
         <div className="dialog-header">
           <h2>{title}</h2>
-          <Button isIconOnly variant="light" aria-label="关闭" onPress={onClose}>
+          <Button isIconOnly variant="light" aria-label="关闭" title="关闭" onPress={onClose}>
             ×
           </Button>
         </div>
