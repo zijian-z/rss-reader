@@ -1,6 +1,6 @@
 # RSS Reader
 
-一个采用 React、HeroUI 和前端 JavaScript 实现的三栏 RSS 阅读器。界面结构参考 NetNewsWire：左侧订阅和文件夹，中间文章标题列表，右侧正文阅读区。
+一个采用 React、HeroUI 和前端 JavaScript 实现的三栏 RSS 阅读器：左侧订阅和文件夹，中间文章标题列表，右侧正文阅读区。桌面端可以折叠订阅栏和文章列表栏，让阅读区获得更多空间。
 
 ## 形态
 
@@ -41,3 +41,13 @@ npm run app:dist
 ```
 
 GitHub Actions 会在 `main` 分支构建 Web 版本，并分别在 Linux、macOS、Windows 上生成桌面安装包。
+
+## Web 部署
+
+`main` 分支推送后，GitHub Actions 会构建 Web 版本，并把 `dist/` 的内容推送到 `zijian-z/rss-reader-page` 仓库的 `main` 分支根目录。
+
+需要在当前仓库的 GitHub Actions secrets 中添加：
+
+- `RSS_READER_PAGE_TOKEN`：一个能写入 `zijian-z/rss-reader-page` 的 token。
+
+然后在 `zijian-z/rss-reader-page` 仓库里启用 GitHub Pages，发布来源选择 `main` 分支的根目录。启用后通常可以通过 `https://zijian-z.github.io/rss-reader-page/` 访问。

@@ -7,9 +7,10 @@ import {
   Download,
   Edit3,
   FolderPlus,
-  Import,
   List,
   MonitorSmartphone,
+  PanelLeftClose,
+  PanelLeftOpen,
   Plus,
   RefreshCw,
   Rss,
@@ -48,6 +49,8 @@ function App() {
   const [query, setQuery] = useState("");
   const [isAddOpen, setAddOpen] = useState(false);
   const [isSettingsOpen, setSettingsOpen] = useState(false);
+  const [isSourcesCollapsed, setSourcesCollapsed] = useState(false);
+  const [isArticleListCollapsed, setArticleListCollapsed] = useState(false);
   const [editingFeedId, setEditingFeedId] = useState("");
   const fileInputRef = useRef(null);
   const libraryRef = useRef(library);
@@ -380,12 +383,6 @@ function App() {
   return (
     <div className={`app ${library.config.density}`} style={cssVars}>
       <header className="topbar">
-        <div className="brand">
-          <span className="brand-mark">
-            <Rss size={18} />
-          </span>
-          <span>RSS Reader</span>
-        </div>
         <nav className="mobile-switch" aria-label="移动端视图">
           <button
             className={mobilePane === "sources" ? "active" : ""}
@@ -411,49 +408,30 @@ function App() {
             正文
           </button>
         </nav>
-        <div className="topbar-actions">
-          <Tooltip content="刷新">
-            <Button
-              isIconOnly
-              variant="flat"
-              aria-label="刷新"
-              onPress={() => refreshFeeds()}
-              isDisabled={isRefreshing}
-            >
-              <RefreshCw size={18} className={isRefreshing ? "spin" : ""} />
-            </Button>
-          </Tooltip>
-          <Tooltip content="添加订阅">
-            <Button isIconOnly color="primary" aria-label="添加订阅" onPress={() => setAddOpen(true)}>
-              <Plus size={18} />
-            </Button>
-          </Tooltip>
-          <Tooltip content="设置">
-            <Button
-              isIconOnly
-              variant="flat"
-              aria-label="设置"
-              onPress={() => setSettingsOpen(true)}
-            >
-              <Settings size={18} />
-            </Button>
-          </Tooltip>
-        </div>
       </header>
 
-      <div className="three-pane">
+      <div
+        className={`three-pane ${isSourcesCollapsed ? "sources-collapsed" : ""} ${
+          isArticleListCollapsed ? "list-collapsed" : ""
+        }`}
+      >
         <SourcesPane
           activeFilter={library.activeFilter}
           articles={library.articles}
           feeds={library.feeds}
           folders={library.folders}
+          isCollapsed={isSourcesCollapsed}
+          isRefreshing={isRefreshing}
           mobilePane={mobilePane}
           onAdd={() => setAddOpen(true)}
           onEditFeed={setEditingFeedId}
           onMarkAllRead={markAllRead}
+          onOpenSettings={() => setSettingsOpen(true)}
+          onRefreshAll={() => refreshFeeds()}
           onRefreshFeed={(feedId) => refreshFeeds([feedId])}
           onRemoveFeed={removeFeed}
           onSelectSource={selectSource}
+          onToggleCollapse={() => setSourcesCollapsed((value) => !value)}
           selectedFeedId={library.selectedFeedId}
           starredTotal={starredTotal}
           unreadTotal={unreadTotal}
@@ -466,7 +444,9 @@ function App() {
           onBack={() => setMobilePane("sources")}
           onSearch={setQuery}
           onSelectArticle={selectArticle}
+          onToggleCollapse={() => setArticleListCollapsed((value) => !value)}
           query={query}
+          isCollapsed={isArticleListCollapsed}
           selectedArticleId={selectedArticle?.id || ""}
           sourceTitle={sourceTitle(library, selectedFeed)}
         />
@@ -562,111 +542,202 @@ function SourcesPane({
   articles,
   feeds,
   folders,
+  isCollapsed,
+  isRefreshing,
   mobilePane,
   onAdd,
   onEditFeed,
   onMarkAllRead,
+  onOpenSettings,
+  onRefreshAll,
   onRefreshFeed,
   onRemoveFeed,
   onSelectSource,
+  onToggleCollapse,
   selectedFeedId,
   starredTotal,
   unreadTotal,
 }) {
   return (
-    <aside className={`pane sources-pane ${mobilePane === "sources" ? "mobile-active" : ""}`}>
-      <div className="pane-header sidebar-header">
-        <div>
-          <span className="eyebrow">Sources</span>
-          <h1>订阅</h1>
-        </div>
-        <Button isIconOnly variant="flat" aria-label="添加订阅" onPress={onAdd}>
-          <FolderPlus size={18} />
-        </Button>
+    <aside
+      className={`pane sources-pane ${isCollapsed ? "is-collapsed" : ""} ${
+        mobilePane === "sources" ? "mobile-active" : ""
+      }`}
+    >
+      <div className="pane-rail" aria-label="订阅栏已折叠">
+        <Tooltip content="展开订阅栏" placement="right">
+          <Button isIconOnly variant="light" aria-label="展开订阅栏" onPress={onToggleCollapse}>
+            <PanelLeftOpen size={18} />
+          </Button>
+        </Tooltip>
+        <Tooltip content="刷新全部" placement="right">
+          <Button
+            isIconOnly
+            variant="light"
+            aria-label="刷新全部"
+            onPress={onRefreshAll}
+            isDisabled={isRefreshing}
+          >
+            <RefreshCw size={18} className={isRefreshing ? "spin" : ""} />
+          </Button>
+        </Tooltip>
+        <Tooltip content="添加订阅" placement="right">
+          <Button isIconOnly color="primary" aria-label="添加订阅" onPress={onAdd}>
+            <Plus size={18} />
+          </Button>
+        </Tooltip>
+        <Tooltip content="设置" placement="right">
+          <Button isIconOnly variant="light" aria-label="设置" onPress={onOpenSettings}>
+            <Settings size={18} />
+          </Button>
+        </Tooltip>
+        <span className="rail-spacer" />
+        <Tooltip content="全部已读" placement="right">
+          <Button isIconOnly variant="light" aria-label="全部已读" onPress={onMarkAllRead}>
+            <CheckCheck size={18} />
+          </Button>
+        </Tooltip>
       </div>
 
-      <div className="smart-list">
-        <SourceButton
-          active={selectedFeedId === "all" && activeFilter === "all"}
-          icon={<List size={17} />}
-          label="全部"
-          count={articles.length}
-          onClick={() => onSelectSource("all", "all")}
-        />
-        <SourceButton
-          active={activeFilter === "unread"}
-          icon={<Bookmark size={17} />}
-          label="未读"
-          count={unreadTotal}
-          onClick={() => onSelectSource("all", "unread")}
-        />
-        <SourceButton
-          active={activeFilter === "starred"}
-          icon={<Star size={17} />}
-          label="星标"
-          count={starredTotal}
-          onClick={() => onSelectSource("all", "starred")}
-        />
-      </div>
-
-      <div className="folder-list">
-        {folders.map((folder) => {
-          const folderFeeds = feeds.filter((feed) => feed.folderId === folder.id);
-          const folderUnread = folderFeeds.reduce((sum, feed) => sum + feed.unreadCount, 0);
-
-          return (
-            <section className="folder-group" key={folder.id}>
-              <button
-                type="button"
-                className={`folder-title ${
-                  selectedFeedId === `folder:${folder.id}` ? "active" : ""
-                }`}
-                onClick={() => onSelectSource(`folder:${folder.id}`, "all")}
+      <div className="pane-body">
+        <div className="pane-header sidebar-header">
+          <div>
+            <span className="eyebrow">Sources</span>
+            <h1>订阅</h1>
+          </div>
+          <div className="sidebar-actions">
+            <Tooltip content="刷新全部">
+              <Button
+                isIconOnly
+                variant="flat"
+                aria-label="刷新全部"
+                onPress={onRefreshAll}
+                isDisabled={isRefreshing}
               >
-                <span>{folder.name}</span>
-                {folderUnread ? <strong>{folderUnread}</strong> : null}
-              </button>
+                <RefreshCw size={18} className={isRefreshing ? "spin" : ""} />
+              </Button>
+            </Tooltip>
+            <Tooltip content="添加订阅">
+              <Button isIconOnly color="primary" aria-label="添加订阅" onPress={onAdd}>
+                <Plus size={18} />
+              </Button>
+            </Tooltip>
+            <Tooltip content="设置">
+              <Button isIconOnly variant="flat" aria-label="设置" onPress={onOpenSettings}>
+                <Settings size={18} />
+              </Button>
+            </Tooltip>
+            <Tooltip content="折叠订阅栏">
+              <Button
+                isIconOnly
+                className="desktop-only"
+                variant="flat"
+                aria-label="折叠订阅栏"
+                onPress={onToggleCollapse}
+              >
+                <PanelLeftClose size={18} />
+              </Button>
+            </Tooltip>
+          </div>
+        </div>
 
-              <div className="feed-list">
-                {folderFeeds.map((feed) => (
-                  <div
-                    className={`feed-row ${selectedFeedId === feed.id ? "selected" : ""}`}
-                    key={feed.id}
-                  >
-                    <button type="button" onClick={() => onSelectSource(feed.id, "all")}>
-                      <span className={`feed-dot ${feed.status}`} />
-                      <span className="feed-name">{feed.title}</span>
-                      {feed.unreadCount ? <span className="count">{feed.unreadCount}</span> : null}
-                    </button>
-                    <div className="feed-actions">
-                      <button type="button" aria-label="刷新订阅" onClick={() => onRefreshFeed(feed.id)}>
-                        <RefreshCw size={14} />
+        <div className="smart-list">
+          <SourceButton
+            active={selectedFeedId === "all" && activeFilter === "all"}
+            icon={<List size={17} />}
+            label="全部"
+            count={articles.length}
+            onClick={() => onSelectSource("all", "all")}
+          />
+          <SourceButton
+            active={activeFilter === "unread"}
+            icon={<Bookmark size={17} />}
+            label="未读"
+            count={unreadTotal}
+            onClick={() => onSelectSource("all", "unread")}
+          />
+          <SourceButton
+            active={activeFilter === "starred"}
+            icon={<Star size={17} />}
+            label="星标"
+            count={starredTotal}
+            onClick={() => onSelectSource("all", "starred")}
+          />
+        </div>
+
+        <div className="folder-list">
+          {folders.map((folder) => {
+            const folderFeeds = feeds.filter((feed) => feed.folderId === folder.id);
+            const folderUnread = folderFeeds.reduce((sum, feed) => sum + feed.unreadCount, 0);
+
+            return (
+              <section className="folder-group" key={folder.id}>
+                <button
+                  type="button"
+                  className={`folder-title ${
+                    selectedFeedId === `folder:${folder.id}` ? "active" : ""
+                  }`}
+                  onClick={() => onSelectSource(`folder:${folder.id}`, "all")}
+                >
+                  <span>{folder.name}</span>
+                  {folderUnread ? <strong>{folderUnread}</strong> : null}
+                </button>
+
+                <div className="feed-list">
+                  {folderFeeds.map((feed) => (
+                    <div
+                      className={`feed-row ${selectedFeedId === feed.id ? "selected" : ""}`}
+                      key={feed.id}
+                    >
+                      <button type="button" onClick={() => onSelectSource(feed.id, "all")}>
+                        <span className={`feed-dot ${feed.status}`} />
+                        <span className="feed-name">{feed.title}</span>
+                        {feed.unreadCount ? (
+                          <span className="count">{feed.unreadCount}</span>
+                        ) : null}
                       </button>
-                      <button type="button" aria-label="编辑订阅" onClick={() => onEditFeed(feed.id)}>
-                        <Edit3 size={14} />
-                      </button>
-                      <button type="button" aria-label="删除订阅" onClick={() => onRemoveFeed(feed.id)}>
-                        <Trash2 size={14} />
-                      </button>
+                      <div className="feed-actions">
+                        <button
+                          type="button"
+                          aria-label="刷新订阅"
+                          onClick={() => onRefreshFeed(feed.id)}
+                        >
+                          <RefreshCw size={14} />
+                        </button>
+                        <button
+                          type="button"
+                          aria-label="编辑订阅"
+                          onClick={() => onEditFeed(feed.id)}
+                        >
+                          <Edit3 size={14} />
+                        </button>
+                        <button
+                          type="button"
+                          aria-label="删除订阅"
+                          onClick={() => onRemoveFeed(feed.id)}
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                      {feed.error ? <p className="feed-error">{feed.error}</p> : null}
                     </div>
-                    {feed.error ? <p className="feed-error">{feed.error}</p> : null}
-                  </div>
-                ))}
-              </div>
-            </section>
-          );
-        })}
-      </div>
+                  ))}
+                </div>
+              </section>
+            );
+          })}
+        </div>
 
-      <div className="sidebar-footer">
-        <Button
-          className="wide-button"
-          variant="flat"
-          startContent={<CheckCheck size={17} />}
-          onPress={onMarkAllRead}
-        >
-          全部已读
-        </Button>
+        <div className="sidebar-footer">
+          <Button
+            className="wide-button"
+            variant="flat"
+            startContent={<CheckCheck size={17} />}
+            onPress={onMarkAllRead}
+          >
+            全部已读
+          </Button>
+        </div>
       </div>
     </aside>
   );
@@ -685,67 +756,102 @@ function SourceButton({ active, count, icon, label, onClick }) {
 function ArticleListPane({
   articles,
   feeds,
+  isCollapsed,
   mobilePane,
   onBack,
   onSearch,
   onSelectArticle,
+  onToggleCollapse,
   query,
   selectedArticleId,
   sourceTitle,
 }) {
   return (
-    <section className={`pane list-pane ${mobilePane === "articles" ? "mobile-active" : ""}`}>
-      <div className="pane-header list-header">
-        <Button isIconOnly variant="light" className="mobile-back" aria-label="返回" onPress={onBack}>
-          <ChevronLeft size={19} />
-        </Button>
-        <div>
-          <span className="eyebrow">Articles</span>
-          <h2>{sourceTitle}</h2>
-        </div>
+    <section
+      className={`pane list-pane ${isCollapsed ? "is-collapsed" : ""} ${
+        mobilePane === "articles" ? "mobile-active" : ""
+      }`}
+    >
+      <div className="pane-rail" aria-label="文章列表已折叠">
+        <Tooltip content="展开标题栏" placement="right">
+          <Button isIconOnly variant="light" aria-label="展开标题栏" onPress={onToggleCollapse}>
+            <PanelLeftOpen size={18} />
+          </Button>
+        </Tooltip>
+        <span className="rail-divider" />
+        <List size={18} aria-hidden="true" />
       </div>
 
-      <label className="search-box">
-        <Search size={17} />
-        <input
-          value={query}
-          onChange={(event) => onSearch(event.target.value)}
-          placeholder="搜索标题、作者、摘要"
-          type="search"
-        />
-      </label>
+      <div className="pane-body">
+        <div className="pane-header list-header">
+          <Button
+            isIconOnly
+            variant="light"
+            className="mobile-back"
+            aria-label="返回"
+            onPress={onBack}
+          >
+            <ChevronLeft size={19} />
+          </Button>
+          <div>
+            <span className="eyebrow">Articles</span>
+            <h2>{sourceTitle}</h2>
+          </div>
+          <Tooltip content="折叠标题栏">
+            <Button
+              isIconOnly
+              className="desktop-only"
+              variant="flat"
+              aria-label="折叠标题栏"
+              onPress={onToggleCollapse}
+            >
+              <PanelLeftClose size={18} />
+            </Button>
+          </Tooltip>
+        </div>
 
-      <div className="article-list">
-        {articles.length ? (
-          articles.map((article) => {
-            const feed = feeds.find((item) => item.id === article.feedId);
+        <label className="search-box">
+          <Search size={17} />
+          <input
+            value={query}
+            onChange={(event) => onSearch(event.target.value)}
+            placeholder="搜索标题、作者、摘要"
+            type="search"
+          />
+        </label>
 
-            return (
-              <button
-                type="button"
-                className={`article-row ${selectedArticleId === article.id ? "selected" : ""} ${
-                  article.read ? "read" : "unread"
-                }`}
-                key={article.id}
-                onClick={() => onSelectArticle(article.id)}
-              >
-                <span className="article-source">{feed?.title || "RSS"}</span>
-                <span className="article-title">
-                  {!article.read ? <i /> : null}
-                  {article.title}
-                </span>
-                <span className="article-excerpt">{article.excerpt}</span>
-                <span className="article-meta">
-                  {article.author ? `${article.author} · ` : ""}
-                  {formatShortDate(article.publishedAt || article.fetchedAt)}
-                  {article.starred ? <Star size={14} fill="currentColor" /> : null}
-                </span>
-              </button>
-            );
-          })
-        ) : (
-          <EmptyState icon={<MonitorSmartphone size={28} />} title="暂无文章" />
-        )}
+        <div className="article-list">
+          {articles.length ? (
+            articles.map((article) => {
+              const feed = feeds.find((item) => item.id === article.feedId);
+
+              return (
+                <button
+                  type="button"
+                  className={`article-row ${selectedArticleId === article.id ? "selected" : ""} ${
+                    article.read ? "read" : "unread"
+                  }`}
+                  key={article.id}
+                  onClick={() => onSelectArticle(article.id)}
+                >
+                  <span className="article-source">{feed?.title || "RSS"}</span>
+                  <span className="article-title">
+                    {!article.read ? <i /> : null}
+                    {article.title}
+                  </span>
+                  <span className="article-excerpt">{article.excerpt}</span>
+                  <span className="article-meta">
+                    {article.author ? `${article.author} · ` : ""}
+                    {formatShortDate(article.publishedAt || article.fetchedAt)}
+                    {article.starred ? <Star size={14} fill="currentColor" /> : null}
+                  </span>
+                </button>
+              );
+            })
+          ) : (
+            <EmptyState icon={<MonitorSmartphone size={28} />} title="暂无文章" />
+          )}
+        </div>
       </div>
     </section>
   );

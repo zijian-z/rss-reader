@@ -63,7 +63,7 @@ button {
 .app {
   height: 100vh;
   display: grid;
-  grid-template-rows: 56px minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
   overflow: hidden;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.5), transparent 180px),
@@ -78,37 +78,16 @@ button {
 
 .topbar {
   height: 56px;
-  display: flex;
+  display: none;
   align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 0 16px;
+  justify-content: center;
+  padding: 0 10px;
   border-bottom: 1px solid var(--border);
   background: color-mix(in srgb, var(--pane-bg) 88%, transparent);
   backdrop-filter: blur(18px);
   z-index: 20;
 }
 
-.brand {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 15px;
-  font-weight: 760;
-  min-width: 150px;
-}
-
-.brand-mark {
-  width: 30px;
-  height: 30px;
-  display: grid;
-  place-items: center;
-  border-radius: 8px;
-  color: white;
-  background: linear-gradient(135deg, var(--accent), var(--blue));
-}
-
-.topbar-actions,
 .reader-actions {
   display: flex;
   align-items: center;
@@ -150,8 +129,18 @@ button {
 .three-pane {
   min-height: 0;
   display: grid;
-  grid-template-columns: minmax(230px, 280px) minmax(320px, 390px) minmax(420px, 1fr);
+  --sources-width: minmax(230px, 280px);
+  --list-width: minmax(320px, 390px);
+  grid-template-columns: var(--sources-width) var(--list-width) minmax(420px, 1fr);
   overflow: hidden;
+}
+
+.three-pane.sources-collapsed {
+  --sources-width: 52px;
+}
+
+.three-pane.list-collapsed {
+  --list-width: 52px;
 }
 
 .pane {
@@ -176,6 +165,65 @@ button {
   border-right: 0;
 }
 
+.pane-body {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.pane-rail {
+  display: none;
+}
+
+.desktop-only {
+  display: inline-flex;
+}
+
+@media (min-width: 861px) {
+  .pane.is-collapsed {
+    overflow: visible;
+  }
+
+  .pane.is-collapsed .pane-body {
+    display: none;
+  }
+
+  .pane.is-collapsed .pane-rail {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 6px;
+    overflow: hidden;
+  }
+
+  .pane-rail [data-slot="base"] {
+    min-width: 36px;
+    width: 36px;
+    height: 36px;
+  }
+
+  .rail-spacer {
+    flex: 1;
+  }
+
+  .rail-divider {
+    width: 26px;
+    height: 1px;
+    margin: 2px 0;
+    background: var(--border);
+  }
+
+  .list-pane .pane-rail {
+    color: var(--muted);
+  }
+}
+
 .pane-header {
   min-height: 78px;
   display: flex;
@@ -184,6 +232,22 @@ button {
   gap: 12px;
   padding: 18px 18px 14px;
   border-bottom: 1px solid var(--border);
+}
+
+.sidebar-header {
+  align-items: flex-start;
+}
+
+.list-header {
+  align-items: flex-start;
+}
+
+.sidebar-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
 .pane-header h1,
@@ -792,8 +856,12 @@ input[type="range"] {
 }
 
 @media (max-width: 1120px) {
-  .three-pane {
-    grid-template-columns: minmax(220px, 250px) minmax(300px, 350px) minmax(360px, 1fr);
+  .three-pane:not(.sources-collapsed) {
+    --sources-width: minmax(220px, 250px);
+  }
+
+  .three-pane:not(.list-collapsed) {
+    --list-width: minmax(300px, 350px);
   }
 
   .reader-content {
@@ -807,24 +875,13 @@ input[type="range"] {
   }
 
   .topbar {
+    display: flex;
     padding: 0 10px;
     gap: 8px;
   }
 
-  .brand {
-    min-width: 0;
-  }
-
-  .brand span:last-child {
-    display: none;
-  }
-
   .mobile-switch {
     display: flex;
-  }
-
-  .topbar-actions {
-    gap: 6px;
   }
 
   .three-pane {
@@ -839,8 +896,20 @@ input[type="range"] {
     border-right: 0;
   }
 
+  .pane.is-collapsed .pane-rail {
+    display: none;
+  }
+
+  .pane.is-collapsed .pane-body {
+    display: flex;
+  }
+
   .pane.mobile-active {
     display: flex;
+  }
+
+  .desktop-only {
+    display: none;
   }
 
   .mobile-back {

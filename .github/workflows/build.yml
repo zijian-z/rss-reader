@@ -10,6 +10,8 @@ on:
 env:
   NODE_VERSION: 24.14.0
   NPM_VERSION: 11.9.0
+  WEB_DEPLOY_REPOSITORY: zijian-z/rss-reader-page
+  WEB_DEPLOY_BRANCH: main
 
 jobs:
   web:
@@ -58,6 +60,50 @@ jobs:
         with:
           name: rss-reader-web
           path: dist
+
+  deploy-web:
+    name: Deploy Web
+    runs-on: ubuntu-latest
+    needs: web
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: rss-reader-web
+          path: dist
+      - name: Push dist to page repository
+        shell: bash
+        env:
+          DEPLOY_TOKEN: ${{ secrets.RSS_READER_PAGE_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${DEPLOY_TOKEN}" ]; then
+            echo "RSS_READER_PAGE_TOKEN is not set; skipping web deployment."
+            exit 0
+          fi
+
+          repo_url="https://x-access-token:${DEPLOY_TOKEN}@github.com/${WEB_DEPLOY_REPOSITORY}.git"
+          workdir="${RUNNER_TEMP}/rss-reader-page"
+
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git clone "$repo_url" "$workdir"
+          cd "$workdir"
+          git checkout -B "$WEB_DEPLOY_BRANCH"
+
+          find . -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+          cp -R "${GITHUB_WORKSPACE}/dist/." .
+          touch .nojekyll
+
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No web changes to deploy."
+            exit 0
+          fi
+
+          git commit -m "Deploy web build ${GITHUB_SHA::7}"
+          git push origin "HEAD:${WEB_DEPLOY_BRANCH}"
 
   desktop:
     name: Desktop ${{ matrix.os }}
