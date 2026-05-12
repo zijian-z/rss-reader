@@ -20,11 +20,39 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-          cache-dependency-path: package-lock.json
-      - name: Pin npm
-        run: npm install -g npm@${{ env.NPM_VERSION }}
-      - run: npm ci --no-audit --no-fund
+      - name: Configure npm
+        shell: bash
+        run: |
+          npm config set cache "$RUNNER_TEMP/npm-cache" --global
+          npm install -g npm@${{ env.NPM_VERSION }}
+          npm config set cache "$RUNNER_TEMP/npm-cache" --global
+          node --version
+          npm --version
+          npm config get cache
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund --prefer-online
+      - name: Print npm debug logs
+        if: failure()
+        shell: bash
+        run: |
+          shopt -s nullglob
+          logs=("$RUNNER_TEMP"/npm-cache/_logs/*.log)
+          if [ ${#logs[@]} -eq 0 ]; then
+            echo "No npm debug logs found in $RUNNER_TEMP/npm-cache/_logs"
+            exit 0
+          fi
+          for log in "${logs[@]}"; do
+            echo "::group::$(basename "$log")"
+            sed -n '1,320p' "$log"
+            echo "::endgroup::"
+          done
+      - name: Upload npm debug logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-debug-logs-web
+          path: ${{ runner.temp }}/npm-cache/_logs/*.log
+          if-no-files-found: ignore
       - run: npm run build
       - uses: actions/upload-artifact@v4
         with:
@@ -43,11 +71,39 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-          cache-dependency-path: package-lock.json
-      - name: Pin npm
-        run: npm install -g npm@${{ env.NPM_VERSION }}
-      - run: npm ci --no-audit --no-fund
+      - name: Configure npm
+        shell: bash
+        run: |
+          npm config set cache "$RUNNER_TEMP/npm-cache" --global
+          npm install -g npm@${{ env.NPM_VERSION }}
+          npm config set cache "$RUNNER_TEMP/npm-cache" --global
+          node --version
+          npm --version
+          npm config get cache
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund --prefer-online
+      - name: Print npm debug logs
+        if: failure()
+        shell: bash
+        run: |
+          shopt -s nullglob
+          logs=("$RUNNER_TEMP"/npm-cache/_logs/*.log)
+          if [ ${#logs[@]} -eq 0 ]; then
+            echo "No npm debug logs found in $RUNNER_TEMP/npm-cache/_logs"
+            exit 0
+          fi
+          for log in "${logs[@]}"; do
+            echo "::group::$(basename "$log")"
+            sed -n '1,320p' "$log"
+            echo "::endgroup::"
+          done
+      - name: Upload npm debug logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-debug-logs-desktop-${{ matrix.os }}
+          path: ${{ runner.temp }}/npm-cache/_logs/*.log
+          if-no-files-found: ignore
       - name: Build desktop app
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
