@@ -105,9 +105,19 @@ jobs:
           path: ${{ runner.temp }}/npm-cache/_logs/*.log
           if-no-files-found: ignore
       - name: Build desktop app
+        shell: bash
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
-        run: npm run app:dist
+        run: |
+          set -o pipefail
+          npm run app:dist 2>&1 | tee desktop-build.log
+      - name: Upload desktop build log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-build-log-${{ matrix.os }}
+          path: desktop-build.log
+          if-no-files-found: ignore
       - uses: actions/upload-artifact@v4
         with:
           name: rss-reader-desktop-${{ matrix.os }}
