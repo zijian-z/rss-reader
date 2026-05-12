@@ -1,6 +1,8 @@
 import { uid } from "./rss.js";
 
 export const STORAGE_KEY = "rss-reader-library-v1";
+export const CURRENT_SCHEMA_VERSION = 2;
+export const DEFAULT_PROXY_TEMPLATE = "https://api.plunox.site/rss?url={url}";
 
 export const DEFAULT_CONFIG = {
   refreshMinutes: 30,
@@ -9,8 +11,9 @@ export const DEFAULT_CONFIG = {
   readerWidth: 780,
   fontFamily: "system",
   theme: "system",
+  accentColor: "blue",
   density: "comfortable",
-  proxyTemplate: "",
+  proxyTemplate: DEFAULT_PROXY_TEMPLATE,
 };
 
 export function createDefaultLibrary() {
@@ -18,7 +21,7 @@ export function createDefaultLibrary() {
   const cultureFolderId = "folder_culture";
 
   return {
-    schemaVersion: 1,
+    schemaVersion: CURRENT_SCHEMA_VERSION,
     config: { ...DEFAULT_CONFIG },
     folders: [
       { id: techFolderId, name: "科技" },
@@ -79,9 +82,14 @@ export function normalizeLibrary(input) {
     ...DEFAULT_CONFIG,
     ...(typeof input?.config === "object" && input.config ? input.config : {}),
   };
+  const schemaVersion = Number(input?.schemaVersion || 1);
+
+  if (schemaVersion < 2 && !config.proxyTemplate) {
+    config.proxyTemplate = DEFAULT_PROXY_TEMPLATE;
+  }
 
   return {
-    schemaVersion: 1,
+    schemaVersion: CURRENT_SCHEMA_VERSION,
     config,
     folders: folders.map(normalizeFolder).filter(Boolean),
     feeds: feeds.map(normalizeFeed).filter(Boolean),

@@ -81,6 +81,8 @@ Worker 配置在 `wrangler.jsonc`：
 - `ALLOWED_HOSTS`：留空表示允许代理所有 http/https RSS 地址；如果要限制来源，可填逗号分隔的主机名。
 - `MAX_BYTES`：最大响应体字节数，默认 `8388608`。
 
+默认代理模板是 `https://api.plunox.site/rss?url={url}`。该代理不会留存用户信息和请求记录；你也可以在设置中替换为自己的代理地址，或清空后直接请求 RSS 地址。
+
 桌面开发：
 
 ```bash
@@ -104,3 +106,7 @@ GitHub Actions 会在 `main` 分支构建 Web 版本，并分别在 Linux、macO
 - `RSS_READER_PAGE_TOKEN`：一个能写入 `zijian-z/rss-reader-page` 的 token。
 
 然后在 `zijian-z/rss-reader-page` 仓库里启用 GitHub Pages，发布来源选择 `main` 分支的根目录。启用后通常可以通过 `https://zijian-z.github.io/rss-reader-page/` 访问。
+
+## 许可证
+
+MIT License. 源代码：<https://github.com/zijian-z/rss-reader>

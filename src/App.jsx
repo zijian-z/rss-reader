@@ -43,6 +43,14 @@ const dateOnlyFormatter = new Intl.DateTimeFormat("zh-CN", {
   day: "numeric",
 });
 
+const ACCENT_OPTIONS = [
+  { value: "blue", label: "蓝色" },
+  { value: "slate", label: "石墨" },
+  { value: "violet", label: "紫色" },
+  { value: "rose", label: "玫瑰" },
+  { value: "amber", label: "琥珀" },
+];
+
 function App() {
   const [library, setLibrary] = useState(loadLibrary);
   const [mobilePane, setMobilePane] = useState("sources");
@@ -381,7 +389,10 @@ function App() {
   };
 
   return (
-    <div className={`app ${library.config.density}`} style={cssVars}>
+    <div
+      className={`app ${library.config.density} accent-${library.config.accentColor || "blue"}`}
+      style={cssVars}
+    >
       <header className="topbar">
         <nav className="mobile-switch" aria-label="移动端视图">
           <button
@@ -582,7 +593,13 @@ function SourcesPane({
           </Button>
         </Tooltip>
         <Tooltip content="添加订阅" placement="right">
-          <Button isIconOnly color="primary" aria-label="添加订阅" onPress={onAdd}>
+          <Button
+            isIconOnly
+            className="accent-icon-button"
+            variant="flat"
+            aria-label="添加订阅"
+            onPress={onAdd}
+          >
             <Plus size={18} />
           </Button>
         </Tooltip>
@@ -618,7 +635,13 @@ function SourcesPane({
               </Button>
             </Tooltip>
             <Tooltip content="添加订阅">
-              <Button isIconOnly color="primary" aria-label="添加订阅" onPress={onAdd}>
+              <Button
+                isIconOnly
+                className="accent-icon-button"
+                variant="flat"
+                aria-label="添加订阅"
+                onPress={onAdd}
+              >
                 <Plus size={18} />
               </Button>
             </Tooltip>
@@ -988,7 +1011,7 @@ function AddFeedDialog({ folders, onClose, onSubmit }) {
           <Button variant="flat" onPress={onClose}>
             取消
           </Button>
-          <Button color="primary" type="submit">
+          <Button className="accent-button" type="submit">
             添加
           </Button>
         </div>
@@ -1047,7 +1070,7 @@ function EditFeedDialog({ feed, folders, onClose, onSubmit }) {
           <Button variant="flat" onPress={onClose}>
             取消
           </Button>
-          <Button color="primary" type="submit">
+          <Button className="accent-button" type="submit">
             保存
           </Button>
         </div>
@@ -1094,9 +1117,12 @@ function SettingsDialog({
             <input
               value={config.proxyTemplate}
               onChange={(event) => onConfigChange({ proxyTemplate: event.target.value })}
-              placeholder="https://proxy.example/raw?url={url}"
+              placeholder="留空则直接请求 RSS 地址"
               type="text"
             />
+            <small className="field-note">
+              默认代理不会留存用户信息和请求记录；也可以替换为自己的代理地址，或清空后直接请求 RSS。
+            </small>
           </label>
         </section>
 
@@ -1149,6 +1175,19 @@ function SettingsDialog({
             </select>
           </label>
           <label>
+            <span>强调色</span>
+            <select
+              value={config.accentColor || "blue"}
+              onChange={(event) => onConfigChange({ accentColor: event.target.value })}
+            >
+              {ACCENT_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
             <span>密度</span>
             <select
               value={config.density}
@@ -1195,24 +1234,42 @@ function SettingsDialog({
           </Button>
         </section>
 
-        <section>
+        <section className="data-section">
           <h3>数据</h3>
-          <div className="data-actions">
-            <Button startContent={<Download size={17} />} variant="flat" onPress={onExport}>
+          <div className="data-action-grid">
+            <Button
+              className="data-action-button"
+              startContent={<Download size={17} />}
+              variant="flat"
+              onPress={onExport}
+            >
               导出 JSON
             </Button>
-            <Button startContent={<Upload size={17} />} variant="flat" onPress={onImportClick}>
+            <Button
+              className="data-action-button"
+              startContent={<Upload size={17} />}
+              variant="flat"
+              onPress={onImportClick}
+            >
               导入 JSON
             </Button>
-            <Button color="danger" variant="flat" onPress={onReset}>
+            <Button className="data-action-button danger-action" variant="flat" onPress={onReset}>
               重置
             </Button>
           </div>
         </section>
+
+        <section className="about-section">
+          <h3>关于</h3>
+          <p>Copyright © 2026 Zijian Zhang. Released under the MIT License.</p>
+          <a href="https://github.com/zijian-z/rss-reader" target="_blank" rel="noreferrer">
+            github.com/zijian-z/rss-reader
+          </a>
+        </section>
       </div>
 
       <div className="dialog-actions">
-        <Button color="primary" onPress={onClose}>
+        <Button className="accent-button" onPress={onClose}>
           完成
         </Button>
       </div>
