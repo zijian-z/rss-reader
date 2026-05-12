@@ -603,25 +603,20 @@ function SourcesPane({
             <Plus size={18} />
           </Button>
         </Tooltip>
-        <Tooltip content="设置" placement="right">
-          <Button isIconOnly variant="light" aria-label="设置" onPress={onOpenSettings}>
-            <Settings size={18} />
-          </Button>
-        </Tooltip>
-        <span className="rail-spacer" />
         <Tooltip content="全部已读" placement="right">
           <Button isIconOnly variant="light" aria-label="全部已读" onPress={onMarkAllRead}>
             <CheckCheck size={18} />
           </Button>
         </Tooltip>
+        <Tooltip content="设置" placement="right">
+          <Button isIconOnly variant="light" aria-label="设置" onPress={onOpenSettings}>
+            <Settings size={18} />
+          </Button>
+        </Tooltip>
       </div>
 
       <div className="pane-body">
-        <div className="pane-header sidebar-header">
-          <div>
-            <span className="eyebrow">Sources</span>
-            <h1>订阅</h1>
-          </div>
+        <div className="pane-header sidebar-header source-toolbar">
           <div className="sidebar-actions">
             <Tooltip content="刷新全部">
               <Button
@@ -643,6 +638,11 @@ function SourcesPane({
                 onPress={onAdd}
               >
                 <Plus size={18} />
+              </Button>
+            </Tooltip>
+            <Tooltip content="全部已读">
+              <Button isIconOnly variant="flat" aria-label="全部已读" onPress={onMarkAllRead}>
+                <CheckCheck size={18} />
               </Button>
             </Tooltip>
             <Tooltip content="设置">
@@ -720,27 +720,33 @@ function SourcesPane({
                         ) : null}
                       </button>
                       <div className="feed-actions">
-                        <button
-                          type="button"
-                          aria-label="刷新订阅"
-                          onClick={() => onRefreshFeed(feed.id)}
-                        >
-                          <RefreshCw size={14} />
-                        </button>
-                        <button
-                          type="button"
-                          aria-label="编辑订阅"
-                          onClick={() => onEditFeed(feed.id)}
-                        >
-                          <Edit3 size={14} />
-                        </button>
-                        <button
-                          type="button"
-                          aria-label="删除订阅"
-                          onClick={() => onRemoveFeed(feed.id)}
-                        >
-                          <Trash2 size={14} />
-                        </button>
+                        <Tooltip content="刷新订阅" placement="right">
+                          <button
+                            type="button"
+                            aria-label="刷新订阅"
+                            onClick={() => onRefreshFeed(feed.id)}
+                          >
+                            <RefreshCw size={14} />
+                          </button>
+                        </Tooltip>
+                        <Tooltip content="编辑订阅" placement="right">
+                          <button
+                            type="button"
+                            aria-label="编辑订阅"
+                            onClick={() => onEditFeed(feed.id)}
+                          >
+                            <Edit3 size={14} />
+                          </button>
+                        </Tooltip>
+                        <Tooltip content="删除订阅" placement="right">
+                          <button
+                            type="button"
+                            aria-label="删除订阅"
+                            onClick={() => onRemoveFeed(feed.id)}
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </Tooltip>
                       </div>
                       {feed.error ? <p className="feed-error">{feed.error}</p> : null}
                     </div>
@@ -749,17 +755,6 @@ function SourcesPane({
               </section>
             );
           })}
-        </div>
-
-        <div className="sidebar-footer">
-          <Button
-            className="wide-button"
-            variant="flat"
-            startContent={<CheckCheck size={17} />}
-            onPress={onMarkAllRead}
-          >
-            全部已读
-          </Button>
         </div>
       </div>
     </aside>
