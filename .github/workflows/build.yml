@@ -7,6 +7,10 @@ on:
     branches: [main]
   workflow_dispatch:
 
+env:
+  NODE_VERSION: 24.14.0
+  NPM_VERSION: 11.9.0
+
 jobs:
   web:
     name: Web
@@ -15,9 +19,12 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: ${{ env.NODE_VERSION }}
           cache: npm
-      - run: npm ci
+          cache-dependency-path: package-lock.json
+      - name: Pin npm
+        run: npm install -g npm@${{ env.NPM_VERSION }}
+      - run: npm ci --no-audit --no-fund
       - run: npm run build
       - uses: actions/upload-artifact@v4
         with:
@@ -35,9 +42,12 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: ${{ env.NODE_VERSION }}
           cache: npm
-      - run: npm ci
+          cache-dependency-path: package-lock.json
+      - name: Pin npm
+        run: npm install -g npm@${{ env.NPM_VERSION }}
+      - run: npm ci --no-audit --no-fund
       - name: Build desktop app
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
