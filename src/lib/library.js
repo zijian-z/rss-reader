@@ -20,15 +20,11 @@ export const DEFAULT_CONFIG = {
 
 export function createDefaultLibrary() {
   const techFolderId = "folder_tech";
-  const cultureFolderId = "folder_culture";
 
   return {
     schemaVersion: CURRENT_SCHEMA_VERSION,
     config: { ...DEFAULT_CONFIG },
-    folders: [
-      { id: techFolderId, name: "科技" },
-      { id: cultureFolderId, name: "阅读" },
-    ],
+    folders: [{ id: techFolderId, name: "科技" }],
     feeds: [
       {
         id: "feed_solidot",

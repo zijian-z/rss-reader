@@ -1333,6 +1333,7 @@ function SettingsDialog({
             ))}
           </div>
           <Button
+            className="settings-button"
             variant="flat"
             startContent={<FolderPlus size={17} />}
             onPress={() => commitFolders([...folderDrafts, createFolder("新文件夹")])}
@@ -1348,7 +1349,7 @@ function SettingsDialog({
           </div>
           <div className="data-action-grid">
             <Button
-              className="data-action-button"
+              className="settings-button"
               startContent={<Download size={17} />}
               variant="flat"
               onPress={onExport}
@@ -1356,7 +1357,7 @@ function SettingsDialog({
               导出配置 JSON
             </Button>
             <Button
-              className="data-action-button"
+              className="settings-button"
               startContent={<Upload size={17} />}
               variant="flat"
               onPress={onImportClick}
@@ -1376,7 +1377,7 @@ function SettingsDialog({
             </label>
             {importStatus ? <p className="form-status error">{importStatus}</p> : null}
             <Button
-              className="accent-button"
+              className="settings-button settings-button-primary"
               isDisabled={isImportingUrl}
               startContent={<Download size={17} />}
               type="submit"
@@ -1385,7 +1386,7 @@ function SettingsDialog({
             </Button>
           </form>
           <div className="danger-zone">
-            <Button className="data-action-button danger-action" variant="flat" onPress={onReset}>
+            <Button className="settings-button settings-button-danger" variant="flat" onPress={onReset}>
               重置本地数据
             </Button>
           </div>
@@ -1403,7 +1404,7 @@ function SettingsDialog({
       </div>
 
       <div className="dialog-actions">
-        <Button className="accent-button" onPress={onClose}>
+        <Button className="settings-button settings-button-primary" onPress={onClose}>
           完成
         </Button>
       </div>

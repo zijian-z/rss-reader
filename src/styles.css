@@ -944,22 +944,34 @@ input[type="range"] {
   gap: 10px;
 }
 
-.data-action-button {
+.settings-button {
   width: 100%;
   min-height: 44px;
-  justify-content: flex-start !important;
+  justify-content: center !important;
+  gap: 8px !important;
   border: 1px solid var(--border) !important;
   background: var(--pane-bg) !important;
   color: var(--text) !important;
+  font-weight: 720 !important;
   box-shadow: none !important;
 }
 
-.data-action-button:hover {
+.settings-button:hover {
   border-color: var(--border-strong) !important;
   background: color-mix(in srgb, var(--text) 5%, var(--pane-bg)) !important;
 }
 
-.data-action-button.danger-action {
+.settings-button-primary {
+  border-color: var(--accent) !important;
+  background: var(--accent) !important;
+  color: white !important;
+}
+
+.settings-button-primary:hover {
+  background: color-mix(in srgb, var(--accent) 92%, black) !important;
+}
+
+.settings-button-danger {
   color: var(--danger) !important;
 }
 
@@ -970,7 +982,7 @@ input[type="range"] {
   border-top: 1px solid var(--border);
 }
 
-.url-import-form .accent-button {
+.url-import-form .settings-button {
   width: 100%;
 }
 
