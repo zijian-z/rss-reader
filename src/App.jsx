@@ -58,6 +58,7 @@ const ACCENT_OPTIONS = [
   { value: "rose", label: "玫瑰" },
   { value: "amber", label: "琥珀" },
 ];
+const AI_CACHE_VERSION = "title-language-split-v1";
 const MAX_AI_CONTENT_CHARS = 60000;
 
 function App() {
@@ -286,9 +287,7 @@ function App() {
         ...article,
         read: existingById.get(article.id)?.read || false,
         starred: existingById.get(article.id)?.starred || false,
-        aiContent: existingById.get(article.id)?.aiContent || "",
-        aiGeneratedAt: existingById.get(article.id)?.aiGeneratedAt || "",
-        aiMode: existingById.get(article.id)?.aiMode || false,
+        ...currentAiCache(existingById.get(article.id)),
       }));
       const otherArticles = draft.articles.filter((article) => article.feedId !== feedId);
       const nextArticles = [...mergedArticles, ...otherArticles].slice(0, 1500);
@@ -384,6 +383,26 @@ function App() {
       ...draft,
       articles: draft.articles.map((article) =>
         article.id === articleId ? { ...article, aiMode: enabled } : article,
+      ),
+    }));
+  }
+
+  function resetAiContent(articleId) {
+    setAiStatus((current) =>
+      current.articleId === articleId ? { articleId: "", message: "", loginUrl: "" } : current,
+    );
+    setLibrary((draft) => ({
+      ...draft,
+      articles: draft.articles.map((article) =>
+        article.id === articleId
+          ? {
+              ...article,
+              aiContent: "",
+              aiGeneratedAt: "",
+              aiMode: false,
+              aiPromptVersion: "",
+            }
+          : article,
       ),
     }));
   }
@@ -498,6 +517,7 @@ function App() {
                 aiContent: html,
                 aiGeneratedAt: new Date().toISOString(),
                 aiMode: true,
+                aiPromptVersion: AI_CACHE_VERSION,
               }
             : currentArticle,
         ),
@@ -692,6 +712,7 @@ function App() {
           feed={library.feeds.find((feed) => feed.id === selectedArticle?.feedId)}
           mobilePane={mobilePane}
           onAccessLogin={openCloudflareAccessLogin}
+          onResetAi={resetAiContent}
           onRunAi={runAiForArticle}
           onReaderScroll={handleReaderScroll}
           onBack={() => setMobilePane("articles")}
@@ -1175,13 +1196,17 @@ function ReaderPane({
   onAccessLogin,
   onBack,
   onReaderScroll,
+  onResetAi,
   onRunAi,
   onToggleAiMode,
   onToggleStar,
 }) {
   const articleLink = normalizeArticleLink(article?.link);
   const isAiBusy = aiStatus.articleId === article?.id && !aiStatus.message;
-  const isAiMode = Boolean(article?.aiMode && article?.aiContent);
+  const hasCurrentAiContent = Boolean(
+    article?.aiContent && article?.aiPromptVersion === AI_CACHE_VERSION,
+  );
+  const isAiMode = Boolean(article?.aiMode && hasCurrentAiContent);
   const displayedHtml =
     isAiMode && article.aiContent
       ? article.aiContent
@@ -1207,7 +1232,7 @@ function ReaderPane({
               {article.publishedAt ? <time>{formatLongDate(article.publishedAt)}</time> : null}
             </div>
             <div className="reader-actions">
-              {article.aiContent && isAiMode ? (
+              {hasCurrentAiContent && isAiMode ? (
                 <ActionTooltip label="退出 AI 模式">
                   <Button
                     isIconOnly
@@ -1221,16 +1246,16 @@ function ReaderPane({
                   </Button>
                 </ActionTooltip>
               ) : (
-                <ActionTooltip label={article.aiContent ? "查看 AI 内容" : "AI 总结/翻译"}>
+                <ActionTooltip label={hasCurrentAiContent ? "查看 AI 内容" : "AI 总结/翻译"}>
                   <Button
                     isIconOnly
                     className="reader-action-button"
                     variant="flat"
-                    aria-label={article.aiContent ? "查看 AI 内容" : "AI 总结/翻译"}
-                    title={article.aiContent ? "查看 AI 内容" : "AI 总结/翻译"}
+                    aria-label={hasCurrentAiContent ? "查看 AI 内容" : "AI 总结/翻译"}
+                    title={hasCurrentAiContent ? "查看 AI 内容" : "AI 总结/翻译"}
                     isDisabled={isAiBusy}
                     onPress={() =>
-                      article.aiContent
+                      hasCurrentAiContent
                         ? onToggleAiMode(article.id, true)
                         : onRunAi(article)
                     }
@@ -1239,6 +1264,24 @@ function ReaderPane({
                   </Button>
                 </ActionTooltip>
               )}
+              {hasCurrentAiContent ? (
+                <ActionTooltip label="重新生成 AI 内容">
+                  <Button
+                    isIconOnly
+                    className="reader-action-button"
+                    variant="flat"
+                    aria-label="重新生成 AI 内容"
+                    title="重新生成 AI 内容"
+                    isDisabled={isAiBusy}
+                    onPress={() => {
+                      onResetAi(article.id);
+                      onRunAi(article);
+                    }}
+                  >
+                    <RefreshCw size={18} className={isAiBusy ? "spin" : ""} />
+                  </Button>
+                </ActionTooltip>
+              ) : null}
               <ActionTooltip label={article.starred ? "取消星标" : "星标"}>
                 <Button
                   isIconOnly
@@ -1316,6 +1359,24 @@ function normalizeArticleLink(value) {
   } catch {
     return "";
   }
+}
+
+function currentAiCache(article) {
+  if (!article?.aiContent || article.aiPromptVersion !== AI_CACHE_VERSION) {
+    return {
+      aiContent: "",
+      aiGeneratedAt: "",
+      aiMode: false,
+      aiPromptVersion: "",
+    };
+  }
+
+  return {
+    aiContent: article.aiContent,
+    aiGeneratedAt: article.aiGeneratedAt || "",
+    aiMode: Boolean(article.aiMode),
+    aiPromptVersion: article.aiPromptVersion,
+  };
 }
 
 function articleRouteHref(articleId) {

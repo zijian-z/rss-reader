@@ -244,5 +244,6 @@ function normalizeArticle(article) {
     aiContent: String(article.aiContent || ""),
     aiGeneratedAt: String(article.aiGeneratedAt || ""),
     aiMode: Boolean(article.aiMode),
+    aiPromptVersion: String(article.aiPromptVersion || ""),
   };
 }
