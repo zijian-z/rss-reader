@@ -94,6 +94,33 @@ button {
   gap: 8px;
 }
 
+.reader-link-button {
+  min-width: 54px;
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 14px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 720;
+  text-decoration: none;
+  line-height: 1;
+}
+
+.reader-link-button:hover {
+  border-color: var(--border);
+  background: color-mix(in srgb, var(--text) 12%, transparent);
+}
+
+.reader-link-button:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 42%, transparent);
+  outline-offset: 2px;
+}
+
 .app.accent-blue {
   --accent: #2563eb;
   --accent-soft: rgba(37, 99, 235, 0.12);

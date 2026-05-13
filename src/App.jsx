@@ -953,6 +953,8 @@ function ArticleListPane({
 }
 
 function ReaderPane({ article, feed, mobilePane, onBack, onToggleStar }) {
+  const articleLink = normalizeArticleLink(article?.link);
+
   return (
     <main className={`pane reader-pane ${mobilePane === "reader" ? "mobile-active" : ""}`}>
       {article ? (
@@ -985,17 +987,17 @@ function ReaderPane({ article, feed, mobilePane, onBack, onToggleStar }) {
                   <Star size={18} fill={article.starred ? "currentColor" : "none"} />
                 </Button>
               </ActionTooltip>
-              {article.link ? (
-                <Button
-                  as="a"
-                  href={article.link}
+              {articleLink ? (
+                <a
+                  className="reader-link-button"
+                  href={articleLink}
                   target="_blank"
                   rel="noreferrer"
-                  variant="flat"
+                  aria-label="打开原文"
                   title="打开原文"
                 >
                   原文
-                </Button>
+                </a>
               ) : null}
             </div>
           </div>
@@ -1019,6 +1021,18 @@ function ReaderPane({ article, feed, mobilePane, onBack, onToggleStar }) {
       )}
     </main>
   );
+}
+
+function normalizeArticleLink(value) {
+  if (!value) {
+    return "";
+  }
+
+  try {
+    return new URL(value, window.location.href).href;
+  } catch {
+    return "";
+  }
 }
 
 function AddFeedDialog({ folders, onClose, onSubmit }) {
