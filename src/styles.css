@@ -724,6 +724,38 @@ button {
   font-size: 14px;
 }
 
+.ai-mode-banner,
+.ai-error {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 18px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", sans-serif;
+  font-size: 13px;
+  font-weight: 720;
+}
+
+.ai-mode-banner {
+  border: 1px solid color-mix(in srgb, var(--accent) 24%, transparent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.ai-mode-banner time {
+  color: var(--muted);
+  font-weight: 650;
+}
+
+.ai-error {
+  display: flex;
+  margin: 18px 0 0;
+  border: 1px solid color-mix(in srgb, var(--danger) 24%, transparent);
+  background: color-mix(in srgb, var(--danger) 9%, transparent);
+  color: var(--danger);
+}
+
 .article-html {
   margin-top: 34px;
   color: var(--text);
@@ -876,6 +908,7 @@ button {
 }
 
 .reader-settings-section,
+.ai-settings-section,
 .sync-section {
   grid-row: span 2;
 }

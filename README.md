@@ -80,8 +80,22 @@ Worker 配置在 `wrangler.jsonc`：
 - `ALLOW_ORIGIN`：建议生产环境改成你的前端地址，例如 `https://zijian-z.github.io` 或你的 Pages 地址。
 - `ALLOWED_HOSTS`：留空表示允许代理所有 http/https RSS 地址；如果要限制来源，可填逗号分隔的主机名。
 - `MAX_BYTES`：最大响应体字节数，默认 `8388608`。
+- `AI_BASE_URL`：OpenAI 兼容接口的 base URL，默认 `https://api.openai.com/v1`。
+- `AI_MODEL`：Responses API 使用的模型，默认 `gpt-5.2`。
 
 默认代理模板是 `https://api.plunox.site/rss?url={url}`。该代理不会留存用户信息和请求记录；你也可以在设置中替换为自己的代理地址，或清空后直接请求 RSS 地址。
+
+AI 功能由同一个 Worker 的 `/ai/responses` 路由转发到模型服务，前端只配置 AI Worker URL，不保存模型服务 API Key。部署前需要设置 Worker secret：
+
+```bash
+npx wrangler secret put AI_API_KEY
+```
+
+前端设置里的 AI Worker URL 通常类似：
+
+```text
+https://api.plunox.site/ai/responses
+```
 
 ## 配置同步
 

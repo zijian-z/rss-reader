@@ -16,8 +16,10 @@ import {
   Rss,
   Search,
   Settings,
+  Sparkles,
   Star,
   Trash2,
+  Undo2,
   Upload,
 } from "lucide-react";
 import {
@@ -30,7 +32,7 @@ import {
   normalizeLibrary,
   saveLibrary,
 } from "./lib/library.js";
-import { fetchAndParseFeed } from "./lib/rss.js";
+import { fetchAndParseFeed, sanitizeArticleHtml, stripHtml } from "./lib/rss.js";
 
 const formatter = new Intl.DateTimeFormat("zh-CN", {
   month: "short",
@@ -61,6 +63,7 @@ function App() {
   const [isSettingsOpen, setSettingsOpen] = useState(false);
   const [isSourcesCollapsed, setSourcesCollapsed] = useState(false);
   const [isArticleListCollapsed, setArticleListCollapsed] = useState(false);
+  const [aiStatus, setAiStatus] = useState({ articleId: "", message: "" });
   const [editingFeedId, setEditingFeedId] = useState("");
   const fileInputRef = useRef(null);
   const libraryRef = useRef(library);
@@ -240,6 +243,9 @@ function App() {
         ...article,
         read: existingById.get(article.id)?.read || false,
         starred: existingById.get(article.id)?.starred || false,
+        aiContent: existingById.get(article.id)?.aiContent || "",
+        aiGeneratedAt: existingById.get(article.id)?.aiGeneratedAt || "",
+        aiMode: existingById.get(article.id)?.aiMode || false,
       }));
       const otherArticles = draft.articles.filter((article) => article.feedId !== feedId);
       const nextArticles = [...mergedArticles, ...otherArticles].slice(0, 1500);
@@ -324,6 +330,77 @@ function App() {
         article.id === articleId ? { ...article, starred: !article.starred } : article,
       ),
     }));
+  }
+
+  function toggleAiMode(articleId, enabled) {
+    setLibrary((draft) => ({
+      ...draft,
+      articles: draft.articles.map((article) =>
+        article.id === articleId ? { ...article, aiMode: enabled } : article,
+      ),
+    }));
+  }
+
+  async function runAiForArticle(article) {
+    if (!article) {
+      return;
+    }
+
+    setAiStatus({ articleId: article.id, message: "" });
+
+    try {
+      const contentText = stripHtml(article.content || article.excerpt || "").slice(0, 24000);
+      const response = await fetch(validateAiWorkerUrl(libraryRef.current.config.aiWorkerUrl), {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          title: article.title,
+          author: article.author,
+          publishedAt: article.publishedAt,
+          url: article.link,
+          content: contentText || article.title,
+        }),
+      });
+
+      const payload = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(payload?.error || `AI 请求失败：HTTP ${response.status}`);
+      }
+
+      const html = sanitizeArticleHtml(payload.html || payload.outputText || payload.text || "");
+
+      if (!html) {
+        throw new Error("AI 没有返回可显示的内容");
+      }
+
+      setLibrary((draft) => ({
+        ...draft,
+        articles: draft.articles.map((currentArticle) =>
+          currentArticle.id === article.id
+            ? {
+                ...currentArticle,
+                aiContent: html,
+                aiGeneratedAt: new Date().toISOString(),
+                aiMode: true,
+              }
+            : currentArticle,
+        ),
+      }));
+    } catch (error) {
+      setAiStatus({
+        articleId: article.id,
+        message: error?.message || "AI 处理失败",
+      });
+    } finally {
+      setAiStatus((current) =>
+        current.articleId === article.id && !current.message
+          ? { articleId: "", message: "" }
+          : current,
+      );
+    }
   }
 
   function removeFeed(feedId) {
@@ -484,11 +561,18 @@ function App() {
         />
 
         <ReaderPane
+          aiStatus={
+            aiStatus.articleId === selectedArticle?.id
+              ? aiStatus
+              : { articleId: "", message: "" }
+          }
           article={selectedArticle}
           feed={library.feeds.find((feed) => feed.id === selectedArticle?.feedId)}
           mobilePane={mobilePane}
+          onRunAi={runAiForArticle}
           onBack={() => setMobilePane("articles")}
           onToggleStar={toggleStar}
+          onToggleAiMode={toggleAiMode}
         />
       </div>
 
@@ -952,8 +1036,23 @@ function ArticleListPane({
   );
 }
 
-function ReaderPane({ article, feed, mobilePane, onBack, onToggleStar }) {
+function ReaderPane({
+  aiStatus,
+  article,
+  feed,
+  mobilePane,
+  onBack,
+  onRunAi,
+  onToggleAiMode,
+  onToggleStar,
+}) {
   const articleLink = normalizeArticleLink(article?.link);
+  const isAiBusy = aiStatus.articleId === article?.id && !aiStatus.message;
+  const isAiMode = Boolean(article?.aiMode && article?.aiContent);
+  const displayedHtml =
+    isAiMode && article.aiContent
+      ? article.aiContent
+      : article?.content || `<p>${article?.excerpt || "没有正文内容。"}</p>`;
 
   return (
     <main className={`pane reader-pane ${mobilePane === "reader" ? "mobile-active" : ""}`}>
@@ -975,6 +1074,36 @@ function ReaderPane({ article, feed, mobilePane, onBack, onToggleStar }) {
               {article.publishedAt ? <time>{formatLongDate(article.publishedAt)}</time> : null}
             </div>
             <div className="reader-actions">
+              {article.aiContent && isAiMode ? (
+                <ActionTooltip label="退出 AI 模式">
+                  <Button
+                    isIconOnly
+                    variant="flat"
+                    aria-label="退出 AI 模式"
+                    title="退出 AI 模式"
+                    onPress={() => onToggleAiMode(article.id, false)}
+                  >
+                    <Undo2 size={18} />
+                  </Button>
+                </ActionTooltip>
+              ) : (
+                <ActionTooltip label={article.aiContent ? "查看 AI 内容" : "AI 总结/翻译"}>
+                  <Button
+                    isIconOnly
+                    variant="flat"
+                    aria-label={article.aiContent ? "查看 AI 内容" : "AI 总结/翻译"}
+                    title={article.aiContent ? "查看 AI 内容" : "AI 总结/翻译"}
+                    isDisabled={isAiBusy}
+                    onPress={() =>
+                      article.aiContent
+                        ? onToggleAiMode(article.id, true)
+                        : onRunAi(article)
+                    }
+                  >
+                    <Sparkles size={18} className={isAiBusy ? "spin" : ""} />
+                  </Button>
+                </ActionTooltip>
+              )}
               <ActionTooltip label={article.starred ? "取消星标" : "星标"}>
                 <Button
                   isIconOnly
@@ -1003,15 +1132,23 @@ function ReaderPane({ article, feed, mobilePane, onBack, onToggleStar }) {
           </div>
 
           <article className="reader-content">
+            {isAiMode ? (
+              <div className="ai-mode-banner">
+                <Sparkles size={16} />
+                <span>AI 模式</span>
+                {article.aiGeneratedAt ? <time>{formatLongDate(article.aiGeneratedAt)}</time> : null}
+              </div>
+            ) : null}
             <h1>{article.title}</h1>
             <div className="byline">
               {article.author ? <span>{article.author}</span> : null}
               {article.publishedAt ? <time>{formatLongDate(article.publishedAt)}</time> : null}
             </div>
+            {aiStatus.message ? <p className="ai-error">{aiStatus.message}</p> : null}
             <div
               className="article-html"
               dangerouslySetInnerHTML={{
-                __html: article.content || `<p>${article.excerpt || "没有正文内容。"}</p>`,
+                __html: displayedHtml,
               }}
             />
           </article>
@@ -1033,6 +1170,16 @@ function normalizeArticleLink(value) {
   } catch {
     return "";
   }
+}
+
+function validateAiWorkerUrl(value) {
+  const url = new URL(String(value || "").trim());
+
+  if (!["http:", "https:"].includes(url.protocol)) {
+    throw new Error("请先在设置里填写有效的 AI Worker URL");
+  }
+
+  return url.href;
 }
 
 function AddFeedDialog({ folders, onClose, onSubmit }) {
@@ -1239,6 +1386,22 @@ function SettingsDialog({
             <small className="field-note">
               默认代理不会留存用户信息和请求记录；也可以替换为自己的代理地址，或清空后直接请求 RSS。
             </small>
+          </label>
+        </section>
+
+        <section className="settings-section ai-settings-section">
+          <div className="section-heading">
+            <h3>AI</h3>
+            <p>填入部署在 Worker 上的 AI 接口地址。模型厂商的 Base URL、模型和 API Key 放在 Worker 环境变量里。</p>
+          </div>
+          <label>
+            <span>AI Worker URL</span>
+            <input
+              value={config.aiWorkerUrl || ""}
+              onChange={(event) => onConfigChange({ aiWorkerUrl: event.target.value })}
+              placeholder="https://api.example.com/ai/responses"
+              type="url"
+            />
           </label>
         </section>
 

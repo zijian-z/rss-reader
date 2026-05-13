@@ -5,6 +5,7 @@ export const CURRENT_SCHEMA_VERSION = 2;
 export const CONFIG_EXPORT_TYPE = "rss-reader-config";
 export const CONFIG_EXPORT_VERSION = 1;
 export const DEFAULT_PROXY_TEMPLATE = "https://api.plunox.site/rss?url={url}";
+export const DEFAULT_AI_WORKER_URL = "https://api.plunox.site/ai/responses";
 
 export const DEFAULT_CONFIG = {
   refreshMinutes: 30,
@@ -16,6 +17,7 @@ export const DEFAULT_CONFIG = {
   accentColor: "blue",
   density: "comfortable",
   proxyTemplate: DEFAULT_PROXY_TEMPLATE,
+  aiWorkerUrl: DEFAULT_AI_WORKER_URL,
 };
 
 export function createDefaultLibrary() {
@@ -72,14 +74,15 @@ export function saveLibrary(library) {
 }
 
 export function createConfigExport(library) {
+  const config = {
+    ...DEFAULT_CONFIG,
+    ...(typeof library?.config === "object" && library.config ? library.config : {}),
+  };
   return {
     type: CONFIG_EXPORT_TYPE,
     version: CONFIG_EXPORT_VERSION,
     exportedAt: new Date().toISOString(),
-    config: {
-      ...DEFAULT_CONFIG,
-      ...(typeof library?.config === "object" && library.config ? library.config : {}),
-    },
+    config,
     folders: Array.isArray(library?.folders)
       ? library.folders.map((folder) => ({
           id: String(folder.id || uid("folder")),
@@ -237,5 +240,8 @@ function normalizeArticle(article) {
     fetchedAt: String(article.fetchedAt || ""),
     read: Boolean(article.read),
     starred: Boolean(article.starred),
+    aiContent: String(article.aiContent || ""),
+    aiGeneratedAt: String(article.aiGeneratedAt || ""),
+    aiMode: Boolean(article.aiMode),
   };
 }
