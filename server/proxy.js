@@ -91,6 +91,7 @@ async function handleAiRequest(request, config) {
   try {
     const payload = await request.json();
     const article = normalizeAiArticlePayload(payload);
+    const isChineseArticle = hasChineseText(article.title);
     const upstream = await fetch(`${aiConfig.baseUrl}/responses`, {
       method: "POST",
       headers: {
@@ -99,7 +100,7 @@ async function handleAiRequest(request, config) {
       },
       body: JSON.stringify({
         model: aiConfig.model,
-        instructions: buildAiInstructions(),
+        instructions: buildAiInstructions(isChineseArticle),
         input: buildAiInput(article),
         max_output_tokens: aiConfig.maxOutputTokens,
         store: false,
@@ -160,19 +161,30 @@ function normalizeAiArticlePayload(payload) {
   };
 }
 
-function buildAiInstructions() {
-  return [
+function buildAiInstructions(isChineseArticle) {
+  const sharedRules = [
     "你是 RSS 阅读器内置的中文阅读助手。",
-    "先判断文章主要语言。",
-    "如果文章主要语言是中文，只输出少量中文总结，不要翻译。",
-    "如果文章主要语言不是中文，先输出少量中文总结，再输出全文简体中文翻译。",
-    "非中文文章的总结要短，只保留 3 到 5 个核心要点；全文翻译必须覆盖原文正文，不要只概括，不要省略主要段落。",
-    "翻译要自然、准确，保留原文信息顺序、段落层次、列表关系和必要术语。",
     "输出必须是可直接插入页面的 HTML 片段，不要 Markdown，不要代码围栏。",
     "只允许使用 h2、h3、p、ul、ol、li、strong、em、blockquote 标签。",
-    "中文文章结构：h2 标题“AI 摘要”，后面给出摘要。",
-    "非中文文章结构：h2 标题“AI 摘要”，后面给出短摘要；再给出 h2 标题“全文翻译”，后面给出完整翻译。",
-    "不要编造原文没有的信息；如果原文内容明显不完整，在摘要中简短说明。",
+    "不要编造原文没有的信息；如果原文内容明显不完整，简短说明。",
+  ];
+
+  if (isChineseArticle) {
+    return [
+      ...sharedRules,
+      "这篇文章的标题包含中文字符，按中文文章处理。",
+      "任务：只输出简体中文摘要，不要翻译正文，不要输出全文改写。",
+      "结构：先给出 h2 标题“AI 摘要”，后面用 3 到 7 个要点或短段落概括核心事实、背景、结论和不确定性。",
+    ].join("\n");
+  }
+
+  return [
+    ...sharedRules,
+    "这篇文章的标题不包含中文字符，按非中文文章处理。",
+    "任务：只输出全文简体中文翻译，不要输出摘要，不要输出要点，不要评价文章。",
+    "结构：先给出 h2 标题“全文翻译”，后面给出完整翻译。",
+    "翻译必须覆盖原文正文，不要只概括，不要省略主要段落。",
+    "翻译要自然、准确，保留原文信息顺序、段落层次、列表关系和必要术语。",
   ].join("\n");
 }
 
@@ -204,6 +216,10 @@ function extractResponseText(result) {
     .map((content) => content?.text || "")
     .join("\n")
     .trim();
+}
+
+function hasChineseText(value) {
+  return /[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]/u.test(String(value || ""));
 }
 
 function normalizeBaseUrl(value) {

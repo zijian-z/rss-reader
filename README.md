@@ -11,7 +11,7 @@ RSS Reader 是一个纯前端应用，数据保存在本机浏览器；RSS 代�
 - 配置同步：只导出订阅 URL、文件夹和设置，不导出文章缓存和正文内容。
 - 可分享文章路径：打开文章后 URL 会带上文章路径，方便复制、收藏和回到同一篇文章。
 - 内置 RSS 代理：解决浏览器直接请求 RSS 时遇到的 CORS、HTTPS 和混合内容问题。
-- AI 阅读模式：中文文章生成摘要；英文等非中文文章生成少量摘要和全文中文翻译。
+- AI 阅读模式：标题含中文的文章生成摘要；英文等非中文标题的文章直接全文翻译成中文。
 - Cloudflare Access 支持：`/rss` 可以公开，`/ai/*` 可以单独加登录保护，避免公开消耗你的模型额度。
 - 桌面版本：Electron 版本可以直接抓取 RSS，不需要额外代理。
 
@@ -47,7 +47,7 @@ npm run app:dist
 - `GET /rss?url={url}`：RSS 代理，默认公开。
 - `GET /health`：Worker 健康检查。
 - `GET /ai/health`：AI 路由健康检查，也可用来触发 Cloudflare Access 登录。
-- `POST /ai/responses`：AI 摘要和翻译，转发到 OpenAI Responses API 兼容接口。
+- `POST /ai/responses`：AI 摘要或全文翻译，转发到 OpenAI Responses API 兼容接口。
 
 本地启动代理：
 
