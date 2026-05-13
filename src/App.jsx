@@ -22,9 +22,11 @@ import {
 } from "lucide-react";
 import {
   createDefaultLibrary,
+  createConfigExport,
   createFeed,
   createFolder,
   loadLibrary,
+  normalizeConfigImport,
   normalizeLibrary,
   saveLibrary,
 } from "./lib/library.js";
@@ -354,18 +356,20 @@ function App() {
   }
 
   function exportLibrary() {
-    const payload = {
-      ...library,
-      exportedAt: new Date().toISOString(),
-    };
+    const payload = createConfigExport(library);
     const blob = new Blob([JSON.stringify(payload, null, 2)], {
       type: "application/json",
     });
     const link = document.createElement("a");
     link.href = URL.createObjectURL(blob);
-    link.download = `rss-reader-${new Date().toISOString().slice(0, 10)}.json`;
+    link.download = `rss-reader-config-${new Date().toISOString().slice(0, 10)}.json`;
     link.click();
     URL.revokeObjectURL(link.href);
+  }
+
+  function applyImportedConfig(payload) {
+    setLibrary(normalizeConfigImport(payload));
+    setSettingsOpen(false);
   }
 
   async function importLibrary(file) {
@@ -374,11 +378,28 @@ function App() {
     }
 
     const text = await file.text();
-    setLibrary(normalizeLibrary(JSON.parse(text)));
-    setSettingsOpen(false);
+    applyImportedConfig(JSON.parse(text));
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
+  }
+
+  async function importLibraryFromUrl(url) {
+    const importUrl = new URL(url.trim());
+
+    if (!["http:", "https:"].includes(importUrl.protocol)) {
+      throw new Error("只支持 http 或 https 地址");
+    }
+
+    const response = await fetch(importUrl.href, {
+      cache: "no-store",
+    });
+
+    if (!response.ok) {
+      throw new Error(`无法获取配置：HTTP ${response.status}`);
+    }
+
+    applyImportedConfig(JSON.parse(await response.text()));
   }
 
   const cssVars = {
@@ -522,6 +543,7 @@ function App() {
           onConfigChange={updateConfig}
           onExport={exportLibrary}
           onImportClick={() => fileInputRef.current?.click()}
+          onImportUrl={importLibraryFromUrl}
           onReset={() => setLibrary(createDefaultLibrary())}
           onFoldersChange={(folders) =>
             setLibrary((draft) => ({
@@ -1140,20 +1162,47 @@ function SettingsDialog({
   onExport,
   onFoldersChange,
   onImportClick,
+  onImportUrl,
   onReset,
 }) {
   const [folderDrafts, setFolderDrafts] = useState(folders);
+  const [importUrl, setImportUrl] = useState("");
+  const [importStatus, setImportStatus] = useState("");
+  const [isImportingUrl, setImportingUrl] = useState(false);
 
   function commitFolders(nextFolders) {
     setFolderDrafts(nextFolders);
     onFoldersChange(nextFolders);
   }
 
+  async function submitImportUrl(event) {
+    event.preventDefault();
+    const trimmedUrl = importUrl.trim();
+
+    if (!trimmedUrl) {
+      setImportStatus("请输入配置 JSON 的 URL。");
+      return;
+    }
+
+    setImportingUrl(true);
+    setImportStatus("");
+
+    try {
+      await onImportUrl(trimmedUrl);
+    } catch (error) {
+      setImportStatus(error?.message || "在线导入失败。");
+    } finally {
+      setImportingUrl(false);
+    }
+  }
+
   return (
     <Dialog title="设置" onClose={onClose} wide>
       <div className="settings-grid">
-        <section>
-          <h3>刷新</h3>
+        <section className="settings-section network-section">
+          <div className="section-heading">
+            <h3>刷新与代理</h3>
+          </div>
           <label>
             <span>间隔分钟</span>
             <input
@@ -1179,8 +1228,10 @@ function SettingsDialog({
           </label>
         </section>
 
-        <section>
-          <h3>阅读</h3>
+        <section className="settings-section reader-settings-section">
+          <div className="section-heading">
+            <h3>阅读外观</h3>
+          </div>
           <label>
             <span>字体</span>
             <select
@@ -1252,8 +1303,10 @@ function SettingsDialog({
           </label>
         </section>
 
-        <section>
-          <h3>文件夹</h3>
+        <section className="settings-section folder-settings-section">
+          <div className="section-heading">
+            <h3>文件夹</h3>
+          </div>
           <div className="folder-editor">
             {folderDrafts.map((folder) => (
               <div className="folder-edit-row" key={folder.id}>
@@ -1288,8 +1341,11 @@ function SettingsDialog({
           </Button>
         </section>
 
-        <section className="data-section">
-          <h3>数据</h3>
+        <section className="settings-section sync-section">
+          <div className="section-heading">
+            <h3>配置同步</h3>
+            <p>仅导出配置、文件夹和订阅地址，不包含文章内容、已读状态或本地缓存。</p>
+          </div>
           <div className="data-action-grid">
             <Button
               className="data-action-button"
@@ -1297,7 +1353,7 @@ function SettingsDialog({
               variant="flat"
               onPress={onExport}
             >
-              导出 JSON
+              导出配置 JSON
             </Button>
             <Button
               className="data-action-button"
@@ -1305,16 +1361,40 @@ function SettingsDialog({
               variant="flat"
               onPress={onImportClick}
             >
-              导入 JSON
+              从文件导入
             </Button>
+          </div>
+          <form className="url-import-form" onSubmit={submitImportUrl}>
+            <label>
+              <span>在线导入 URL</span>
+              <input
+                value={importUrl}
+                onChange={(event) => setImportUrl(event.target.value)}
+                placeholder="https://example.com/rss-reader-config.json"
+                type="url"
+              />
+            </label>
+            {importStatus ? <p className="form-status error">{importStatus}</p> : null}
+            <Button
+              className="accent-button"
+              isDisabled={isImportingUrl}
+              startContent={<Download size={17} />}
+              type="submit"
+            >
+              {isImportingUrl ? "导入中" : "从 URL 导入"}
+            </Button>
+          </form>
+          <div className="danger-zone">
             <Button className="data-action-button danger-action" variant="flat" onPress={onReset}>
-              重置
+              重置本地数据
             </Button>
           </div>
         </section>
 
-        <section className="about-section">
-          <h3>关于</h3>
+        <section className="settings-section about-section">
+          <div className="section-heading">
+            <h3>关于</h3>
+          </div>
           <p>Copyright © 2026 Zijian Zhang. Released under the MIT License.</p>
           <a href="https://github.com/zijian-z/rss-reader" target="_blank" rel="noreferrer">
             github.com/zijian-z/rss-reader

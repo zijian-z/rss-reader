@@ -2,6 +2,8 @@ import { uid } from "./rss.js";
 
 export const STORAGE_KEY = "rss-reader-library-v1";
 export const CURRENT_SCHEMA_VERSION = 2;
+export const CONFIG_EXPORT_TYPE = "rss-reader-config";
+export const CONFIG_EXPORT_VERSION = 1;
 export const DEFAULT_PROXY_TEMPLATE = "https://api.plunox.site/rss?url={url}";
 
 export const DEFAULT_CONFIG = {
@@ -29,11 +31,11 @@ export function createDefaultLibrary() {
     ],
     feeds: [
       {
-        id: "feed_hackernews",
+        id: "feed_solidot",
         folderId: techFolderId,
-        title: "Hacker News",
-        url: "https://hnrss.org/frontpage",
-        siteUrl: "https://news.ycombinator.com/",
+        title: "Solidot",
+        url: "https://www.solidot.org/index.rss",
+        siteUrl: "https://www.solidot.org/",
         description: "",
         lastFetched: "",
         status: "idle",
@@ -41,11 +43,11 @@ export function createDefaultLibrary() {
         unreadCount: 0,
       },
       {
-        id: "feed_xkcd",
-        folderId: cultureFolderId,
-        title: "xkcd",
-        url: "https://xkcd.com/rss.xml",
-        siteUrl: "https://xkcd.com/",
+        id: "feed_slashdot",
+        folderId: techFolderId,
+        title: "Slashdot",
+        url: "https://rss.slashdot.org/Slashdot/slashdot",
+        siteUrl: "https://slashdot.org/",
         description: "",
         lastFetched: "",
         status: "idle",
@@ -54,7 +56,7 @@ export function createDefaultLibrary() {
       },
     ],
     articles: [],
-    selectedFeedId: "feed_hackernews",
+    selectedFeedId: "feed_solidot",
     selectedArticleId: "",
     activeFilter: "all",
   };
@@ -71,6 +73,72 @@ export function loadLibrary() {
 
 export function saveLibrary(library) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(library));
+}
+
+export function createConfigExport(library) {
+  return {
+    type: CONFIG_EXPORT_TYPE,
+    version: CONFIG_EXPORT_VERSION,
+    exportedAt: new Date().toISOString(),
+    config: {
+      ...DEFAULT_CONFIG,
+      ...(typeof library?.config === "object" && library.config ? library.config : {}),
+    },
+    folders: Array.isArray(library?.folders)
+      ? library.folders.map((folder) => ({
+          id: String(folder.id || uid("folder")),
+          name: String(folder.name || "未命名文件夹"),
+        }))
+      : [],
+    feeds: Array.isArray(library?.feeds)
+      ? library.feeds.map((feed) => ({
+          id: String(feed.id || uid("feed")),
+          folderId: String(feed.folderId || ""),
+          title: String(feed.title || feed.url || "未命名订阅"),
+          url: String(feed.url || ""),
+          siteUrl: String(feed.siteUrl || ""),
+          description: String(feed.description || ""),
+        })).filter((feed) => feed.url)
+      : [],
+    selectedFeedId: typeof library?.selectedFeedId === "string" ? library.selectedFeedId : "",
+  };
+}
+
+export function normalizeConfigImport(input) {
+  const fallback = createDefaultLibrary();
+  const source = input && typeof input === "object" ? input : fallback;
+  const folders = Array.isArray(source.folders) ? source.folders : fallback.folders;
+  const normalizedFolders = folders.map(normalizeFolder).filter(Boolean);
+  const normalizedFolderIds = new Set(normalizedFolders.map((folder) => folder.id));
+  const fallbackFolderId = normalizedFolders[0]?.id || "";
+  const feeds = (Array.isArray(source.feeds) ? source.feeds : fallback.feeds)
+    .map(normalizeFeed)
+    .filter(Boolean)
+    .map((feed) => ({
+      ...feed,
+      folderId: normalizedFolderIds.has(feed.folderId) ? feed.folderId : fallbackFolderId,
+      lastFetched: "",
+      status: "idle",
+      error: "",
+      unreadCount: 0,
+    }));
+  const selectedFeedId = feeds.some((feed) => feed.id === source.selectedFeedId)
+    ? source.selectedFeedId
+    : feeds[0]?.id || "all";
+
+  return {
+    schemaVersion: CURRENT_SCHEMA_VERSION,
+    config: {
+      ...DEFAULT_CONFIG,
+      ...(typeof source.config === "object" && source.config ? source.config : {}),
+    },
+    folders: normalizedFolders,
+    feeds,
+    articles: [],
+    selectedFeedId,
+    selectedArticleId: "",
+    activeFilter: "all",
+  };
 }
 
 export function normalizeLibrary(input) {

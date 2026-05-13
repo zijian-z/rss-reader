@@ -83,6 +83,14 @@ Worker 配置在 `wrangler.jsonc`：
 
 默认代理模板是 `https://api.plunox.site/rss?url={url}`。该代理不会留存用户信息和请求记录；你也可以在设置中替换为自己的代理地址，或清空后直接请求 RSS 地址。
 
+## 配置同步
+
+设置里的“导出配置 JSON”只导出阅读设置、文件夹和订阅地址，不包含文章内容、已读状态、星标状态或本地缓存。
+
+可以把导出的 JSON 上传到任意可直接访问的 URL，然后在另一台设备的设置里使用“从 URL 导入”完成配置同步。文件导入和 URL 导入都会替换当前设备上的配置，并清空本地文章缓存，之后应用会重新拉取订阅。
+
+默认订阅源是 `https://www.solidot.org/index.rss` 和 `https://rss.slashdot.org/Slashdot/slashdot`，都位于“科技”文件夹。
+
 桌面开发：
 
 ```bash
