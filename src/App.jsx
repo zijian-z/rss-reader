@@ -61,6 +61,7 @@ function App() {
   const [library, setLibrary] = useState(loadLibrary);
   const [routeArticleId, setRouteArticleId] = useState(readRouteArticleId);
   const [mobilePane, setMobilePane] = useState("sources");
+  const [isMobileNavHidden, setMobileNavHidden] = useState(false);
   const [query, setQuery] = useState("");
   const [isAddOpen, setAddOpen] = useState(false);
   const [isSettingsOpen, setSettingsOpen] = useState(false);
@@ -70,6 +71,8 @@ function App() {
   const [editingFeedId, setEditingFeedId] = useState("");
   const fileInputRef = useRef(null);
   const libraryRef = useRef(library);
+  const lastReaderScrollTopRef = useRef(0);
+  const accessLoginStartedAtRef = useRef(0);
 
   useEffect(() => {
     libraryRef.current = library;
@@ -230,6 +233,11 @@ function App() {
   }, [routeArticleId]);
 
   useEffect(() => {
+    setMobileNavHidden(false);
+    lastReaderScrollTopRef.current = 0;
+  }, [mobilePane, selectedArticle?.id]);
+
+  useEffect(() => {
     const minutes = Number(library.config.refreshMinutes);
 
     if (!minutes || minutes < 1) {
@@ -377,6 +385,59 @@ function App() {
     }));
   }
 
+  function handleReaderScroll(event) {
+    if (mobilePane !== "reader") {
+      return;
+    }
+
+    const scrollTop = event.currentTarget.scrollTop;
+    const delta = scrollTop - lastReaderScrollTopRef.current;
+
+    if (Math.abs(delta) < 8) {
+      return;
+    }
+
+    setMobileNavHidden(scrollTop > 32 && delta > 0);
+    lastReaderScrollTopRef.current = scrollTop;
+  }
+
+  function openCloudflareAccessLogin(loginUrl) {
+    accessLoginStartedAtRef.current = Date.now();
+
+    const loginWindow = window.open(loginUrl, "_blank");
+
+    if (!loginWindow) {
+      window.location.href = loginUrl;
+      return;
+    }
+
+    try {
+      loginWindow.opener = null;
+      loginWindow.focus();
+    } catch {
+      // Ignore browser restrictions around cross-window access.
+    }
+
+    const reloadCurrentPage = () => {
+      if (Date.now() - accessLoginStartedAtRef.current < 1200) {
+        return;
+      }
+
+      window.removeEventListener("focus", reloadCurrentPage);
+      document.removeEventListener("visibilitychange", reloadWhenVisible);
+      window.location.reload();
+    };
+
+    const reloadWhenVisible = () => {
+      if (document.visibilityState === "visible") {
+        reloadCurrentPage();
+      }
+    };
+
+    window.addEventListener("focus", reloadCurrentPage);
+    document.addEventListener("visibilitychange", reloadWhenVisible);
+  }
+
   async function runAiForArticle(article) {
     if (!article) {
       return;
@@ -413,7 +474,10 @@ function App() {
       const payload = await response.json().catch(() => ({}));
 
       if (!response.ok) {
-        throw new Error(payload?.error || `AI 请求失败：HTTP ${response.status}`);
+        const error = new Error(payload?.error || `AI 请求失败：HTTP ${response.status}`);
+        error.status = response.status;
+        error.hasJsonPayload = Boolean(payload?.error);
+        throw error;
       }
 
       const html = sanitizeArticleHtml(payload.html || payload.outputText || payload.text || "");
@@ -436,9 +500,18 @@ function App() {
         ),
       }));
     } catch (error) {
+      const config = libraryRef.current.config;
+      const shouldPromptAccessLogin =
+        config.aiAuthMode === "cloudflareAccess" &&
+        (error instanceof TypeError ||
+          ((error.status === 401 || error.status === 403) && !error.hasJsonPayload));
+
       setAiStatus({
         articleId: article.id,
-        message: error?.message || "AI 处理失败",
+        message: shouldPromptAccessLogin
+          ? "Cloudflare Access 登录可能已失效。请重新登录后回到阅读器，页面会自动刷新。"
+          : error?.message || "AI 处理失败",
+        loginUrl: shouldPromptAccessLogin ? buildAiHealthUrl(config.aiWorkerUrl) : "",
       });
     } finally {
       setAiStatus((current) =>
@@ -537,7 +610,7 @@ function App() {
       className={`app ${library.config.density} accent-${library.config.accentColor || "blue"}`}
       style={cssVars}
     >
-      <header className="topbar">
+      <header className={`topbar ${isMobileNavHidden ? "is-hidden" : ""}`}>
         <nav className="mobile-switch" aria-label="移动端视图">
           <button
             className={mobilePane === "sources" ? "active" : ""}
@@ -615,7 +688,9 @@ function App() {
           article={selectedArticle}
           feed={library.feeds.find((feed) => feed.id === selectedArticle?.feedId)}
           mobilePane={mobilePane}
+          onAccessLogin={openCloudflareAccessLogin}
           onRunAi={runAiForArticle}
+          onReaderScroll={handleReaderScroll}
           onBack={() => setMobilePane("articles")}
           onToggleStar={toggleStar}
           onToggleAiMode={toggleAiMode}
@@ -1094,7 +1169,9 @@ function ReaderPane({
   article,
   feed,
   mobilePane,
+  onAccessLogin,
   onBack,
+  onReaderScroll,
   onRunAi,
   onToggleAiMode,
   onToggleStar,
@@ -1188,7 +1265,7 @@ function ReaderPane({
             </div>
           </div>
 
-          <article className="reader-content">
+          <article className="reader-content" onScroll={onReaderScroll}>
             {isAiMode ? (
               <div className="ai-mode-banner">
                 <Sparkles size={16} />
@@ -1201,7 +1278,16 @@ function ReaderPane({
               {article.author ? <span>{article.author}</span> : null}
               {article.publishedAt ? <time>{formatLongDate(article.publishedAt)}</time> : null}
             </div>
-            {aiStatus.message ? <p className="ai-error">{aiStatus.message}</p> : null}
+            {aiStatus.message ? (
+              <div className="ai-error">
+                <span>{aiStatus.message}</span>
+                {aiStatus.loginUrl ? (
+                  <button type="button" onClick={() => onAccessLogin(aiStatus.loginUrl)}>
+                    登录 Cloudflare Access
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
             <div
               className="article-html"
               dangerouslySetInnerHTML={{
@@ -1282,6 +1368,18 @@ function validateAiWorkerUrl(value) {
   }
 
   return url.href;
+}
+
+function buildAiHealthUrl(value) {
+  try {
+    const url = new URL(validateAiWorkerUrl(value));
+    url.pathname = "/ai/health";
+    url.search = "";
+    url.hash = "";
+    return url.href;
+  } catch {
+    return "https://api.plunox.site/ai/health";
+  }
 }
 
 function AddFeedDialog({ folders, onClose, onSubmit }) {

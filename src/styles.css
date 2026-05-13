@@ -766,10 +766,35 @@ button {
 
 .ai-error {
   display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
   margin: 18px 0 0;
   border: 1px solid color-mix(in srgb, var(--danger) 24%, transparent);
   background: color-mix(in srgb, var(--danger) 9%, transparent);
   color: var(--danger);
+}
+
+.ai-error span {
+  min-width: 0;
+}
+
+.ai-error button {
+  flex: 0 0 auto;
+  min-height: 30px;
+  padding: 0 10px;
+  border: 1px solid color-mix(in srgb, var(--danger) 28%, transparent);
+  border-radius: 8px;
+  background: var(--pane-bg);
+  color: var(--danger);
+  font-size: 12px;
+  font-weight: 760;
+  cursor: pointer;
+}
+
+.ai-error button:hover {
+  background: color-mix(in srgb, var(--danger) 8%, var(--pane-bg));
 }
 
 .article-html {
@@ -1161,6 +1186,16 @@ input[type="range"] {
     box-shadow: 0 10px 32px rgba(24, 32, 38, 0.18);
     background: color-mix(in srgb, var(--pane-bg) 94%, transparent);
     backdrop-filter: blur(18px);
+    transition:
+      transform 0.18s ease,
+      opacity 0.18s ease;
+    will-change: transform, opacity;
+  }
+
+  .topbar.is-hidden {
+    transform: translateY(calc(100% + max(18px, env(safe-area-inset-bottom))));
+    opacity: 0;
+    pointer-events: none;
   }
 
   .mobile-switch {
