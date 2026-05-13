@@ -4,8 +4,8 @@
   "compatibility_date": "2026-05-12",
   "workers_dev": true,
   "vars": {
-    "ALLOW_ORIGIN": "*",
-    "ALLOW_CREDENTIALS": "false",
+    "ALLOW_ORIGIN": "https://zijian-z.github.io",
+    "ALLOW_CREDENTIALS": "true",
     "ALLOWED_HOSTS": "",
     "MAX_BYTES": "8388608",
     "AI_BASE_URL": "https://api.openai.com/v1",
