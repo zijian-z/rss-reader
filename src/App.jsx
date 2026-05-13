@@ -8,12 +8,14 @@ import {
   Edit3,
   ExternalLink,
   FolderPlus,
+  Link2,
   List,
   MonitorSmartphone,
   PanelLeftClose,
   PanelLeftOpen,
   Plus,
   RefreshCw,
+  RotateCcw,
   Rss,
   Search,
   Settings,
@@ -22,6 +24,7 @@ import {
   Trash2,
   Undo2,
   Upload,
+  X,
 } from "lucide-react";
 import {
   createDefaultLibrary,
@@ -1694,8 +1697,20 @@ function SettingsDialog({
         </section>
 
         <section className="settings-section folder-settings-section">
-          <div className="section-heading">
+          <div className="section-heading section-heading-with-action">
             <h3>文件夹</h3>
+            <ActionTooltip label="新文件夹">
+              <Button
+                isIconOnly
+                aria-label="新文件夹"
+                className="settings-icon-button"
+                title="新文件夹"
+                variant="flat"
+                onPress={() => commitFolders([...folderDrafts, createFolder("新文件夹")])}
+              >
+                <FolderPlus size={17} />
+              </Button>
+            </ActionTooltip>
           </div>
           <div className="folder-editor">
             {folderDrafts.map((folder) => (
@@ -1710,26 +1725,20 @@ function SettingsDialog({
                     )
                   }
                 />
-                <button
-                  aria-label="删除文件夹"
-                  title="删除文件夹"
-                  disabled={folderDrafts.length <= 1}
-                  onClick={() => commitFolders(folderDrafts.filter((item) => item.id !== folder.id))}
-                  type="button"
-                >
-                  <Trash2 size={15} />
-                </button>
+                <ActionTooltip label="删除文件夹">
+                  <button
+                    aria-label="删除文件夹"
+                    title="删除文件夹"
+                    disabled={folderDrafts.length <= 1}
+                    onClick={() => commitFolders(folderDrafts.filter((item) => item.id !== folder.id))}
+                    type="button"
+                  >
+                    <Trash2 size={15} />
+                  </button>
+                </ActionTooltip>
               </div>
             ))}
           </div>
-          <Button
-            className="settings-button"
-            variant="flat"
-            startContent={<FolderPlus size={17} />}
-            onPress={() => commitFolders([...folderDrafts, createFolder("新文件夹")])}
-          >
-            新文件夹
-          </Button>
         </section>
 
         <section className="settings-section sync-section">
@@ -1737,48 +1746,71 @@ function SettingsDialog({
             <h3>配置同步</h3>
             <p>仅导出配置、文件夹和订阅地址，不包含文章内容、已读状态或本地缓存。</p>
           </div>
-          <div className="data-action-grid">
-            <Button
-              className="settings-button"
-              startContent={<Download size={17} />}
-              variant="flat"
-              onPress={onExport}
-            >
-              导出配置 JSON
-            </Button>
-            <Button
-              className="settings-button"
-              startContent={<Upload size={17} />}
-              variant="flat"
-              onPress={onImportClick}
-            >
-              从文件导入
-            </Button>
+          <div className="settings-action-row">
+            <ActionTooltip label="导出配置 JSON">
+              <Button
+                isIconOnly
+                aria-label="导出配置 JSON"
+                className="settings-icon-button"
+                title="导出配置 JSON"
+                variant="flat"
+                onPress={onExport}
+              >
+                <Download size={17} />
+              </Button>
+            </ActionTooltip>
+            <ActionTooltip label="从文件导入">
+              <Button
+                isIconOnly
+                aria-label="从文件导入"
+                className="settings-icon-button"
+                title="从文件导入"
+                variant="flat"
+                onPress={onImportClick}
+              >
+                <Upload size={17} />
+              </Button>
+            </ActionTooltip>
           </div>
           <form className="url-import-form" onSubmit={submitImportUrl}>
             <label>
               <span>在线导入 URL</span>
-              <input
-                value={importUrl}
-                onChange={(event) => setImportUrl(event.target.value)}
-                placeholder="https://example.com/rss-reader-config.json"
-                type="url"
-              />
+              <div className="url-import-controls">
+                <input
+                  value={importUrl}
+                  onChange={(event) => setImportUrl(event.target.value)}
+                  placeholder="https://example.com/rss-reader-config.json"
+                  type="url"
+                />
+                <ActionTooltip label={isImportingUrl ? "导入中" : "从 URL 导入"}>
+                  <Button
+                    isIconOnly
+                    aria-label={isImportingUrl ? "导入中" : "从 URL 导入"}
+                    className="settings-icon-button settings-icon-button-primary"
+                    isDisabled={isImportingUrl}
+                    title={isImportingUrl ? "导入中" : "从 URL 导入"}
+                    type="submit"
+                  >
+                    <Link2 size={17} />
+                  </Button>
+                </ActionTooltip>
+              </div>
             </label>
             {importStatus ? <p className="form-status error">{importStatus}</p> : null}
-            <Button
-              className="settings-button settings-button-primary"
-              isDisabled={isImportingUrl}
-              startContent={<Download size={17} />}
-              type="submit"
-            >
-              {isImportingUrl ? "导入中" : "从 URL 导入"}
-            </Button>
           </form>
           <div className="danger-zone">
-            <Button className="settings-button settings-button-danger" variant="flat" onPress={onReset}>
-              重置本地数据
-            </Button>
+            <ActionTooltip label="重置本地数据">
+              <Button
+                isIconOnly
+                aria-label="重置本地数据"
+                className="settings-icon-button settings-icon-button-danger"
+                title="重置本地数据"
+                variant="flat"
+                onPress={onReset}
+              >
+                <RotateCcw size={17} />
+              </Button>
+            </ActionTooltip>
           </div>
         </section>
 
@@ -1793,11 +1825,6 @@ function SettingsDialog({
         </section>
       </div>
 
-      <div className="dialog-actions">
-        <Button className="settings-button settings-button-primary" onPress={onClose}>
-          完成
-        </Button>
-      </div>
     </Dialog>
   );
 }
@@ -1835,9 +1862,11 @@ function Dialog({ children, onClose, title, wide = false }) {
       >
         <div className="dialog-header">
           <h2>{title}</h2>
-          <Button isIconOnly variant="light" aria-label="关闭" title="关闭" onPress={onClose}>
-            ×
-          </Button>
+          <ActionTooltip label="关闭">
+            <Button isIconOnly variant="light" aria-label="关闭" title="关闭" onPress={onClose}>
+              <X size={18} />
+            </Button>
+          </ActionTooltip>
         </div>
         {children}
       </div>
