@@ -78,6 +78,7 @@ https://rss-reader-proxy.<你的 workers.dev 子域>.workers.dev/rss?url={url}
 Worker 配置在 `wrangler.jsonc`：
 
 - `ALLOW_ORIGIN`：建议生产环境改成你的前端地址，例如 `https://zijian-z.github.io` 或你的 Pages 地址。
+- `ALLOW_CREDENTIALS`：默认 `false`。如果 AI 接口使用 Cloudflare Access Cookie 鉴权，需要设为 `true`，同时 `ALLOW_ORIGIN` 必须是明确的前端 Origin，不能是 `*`。
 - `ALLOWED_HOSTS`：留空表示允许代理所有 http/https RSS 地址；如果要限制来源，可填逗号分隔的主机名。
 - `MAX_BYTES`：最大响应体字节数，默认 `8388608`。
 - `AI_BASE_URL`：OpenAI 兼容接口的 base URL，默认 `https://api.openai.com/v1`。
@@ -96,6 +97,17 @@ npx wrangler secret put AI_API_KEY
 ```text
 https://api.plunox.site/ai/responses
 ```
+
+如果只想保护 AI 接口，建议在 Cloudflare Zero Trust 里给 `api.plunox.site/ai/*` 创建 Access 应用，并把 `/rss` 留在 Access 之外。前端设置里的“AI 鉴权”选择 `Cloudflare Access` 后，AI 请求会携带 Access 登录 Cookie；RSS 代理请求不会携带鉴权。
+
+使用 Cloudflare Access 时还需要在 Access 应用中配置 CORS：
+
+- Origin 填前端地址，例如 `https://zijian-z.github.io`。
+- Methods 至少包含 `POST` 和 `OPTIONS`。
+- Headers 至少包含 `content-type`。
+- 允许 credentials。
+
+首次使用前，可以先打开 `https://api.plunox.site/ai/health` 完成 Access 登录；登录成功后再回到阅读器使用 AI 按钮。
 
 ## 配置同步
 

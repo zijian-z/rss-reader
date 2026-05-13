@@ -350,8 +350,9 @@ function App() {
     setAiStatus({ articleId: article.id, message: "" });
 
     try {
+      const config = libraryRef.current.config;
       const contentText = stripHtml(article.content || article.excerpt || "").slice(0, 24000);
-      const response = await fetch(validateAiWorkerUrl(libraryRef.current.config.aiWorkerUrl), {
+      const requestOptions = {
         method: "POST",
         headers: {
           "content-type": "application/json",
@@ -363,7 +364,13 @@ function App() {
           url: article.link,
           content: contentText || article.title,
         }),
-      });
+      };
+
+      if (config.aiAuthMode === "cloudflareAccess") {
+        requestOptions.credentials = "include";
+      }
+
+      const response = await fetch(validateAiWorkerUrl(config.aiWorkerUrl), requestOptions);
 
       const payload = await response.json().catch(() => ({}));
 
@@ -1407,6 +1414,19 @@ function SettingsDialog({
               placeholder="https://api.example.com/ai/responses"
               type="url"
             />
+          </label>
+          <label>
+            <span>AI 鉴权</span>
+            <select
+              value={config.aiAuthMode || "none"}
+              onChange={(event) => onConfigChange({ aiAuthMode: event.target.value })}
+            >
+              <option value="none">不使用鉴权</option>
+              <option value="cloudflareAccess">Cloudflare Access</option>
+            </select>
+            <small className="field-note">
+              使用 Cloudflare Access 时，AI 请求会携带 Access 登录 Cookie；RSS 代理仍保持公开。
+            </small>
           </label>
         </section>
 

@@ -23,6 +23,10 @@ export async function handleProxyRequest(request, env = {}) {
     return jsonResponse({ ok: true }, 200, config);
   }
 
+  if (requestUrl.pathname === "/ai/health") {
+    return jsonResponse({ ok: true, ai: true }, 200, config);
+  }
+
   if (requestUrl.pathname === "/ai/responses") {
     return handleAiRequest(request, config);
   }
@@ -126,6 +130,7 @@ export function readProxyConfig(env = {}) {
   return {
     env,
     allowOrigin: String(env.ALLOW_ORIGIN || "*"),
+    allowCredentials: isTruthy(env.ALLOW_CREDENTIALS),
     allowedHosts: parseAllowedHosts(env.ALLOWED_HOSTS || ""),
     maxBytes: positiveNumber(env.MAX_BYTES, DEFAULT_MAX_BYTES),
   };
@@ -230,13 +235,23 @@ function positiveNumber(value, fallback) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
+function isTruthy(value) {
+  return ["1", "true", "yes", "on"].includes(String(value || "").trim().toLowerCase());
+}
+
 function corsHeaders(config) {
-  return {
+  const headers = {
     "access-control-allow-origin": config.allowOrigin,
     "access-control-allow-methods": "GET, POST, OPTIONS",
     "access-control-allow-headers": "content-type",
     vary: "origin",
   };
+
+  if (config.allowCredentials && config.allowOrigin !== "*") {
+    headers["access-control-allow-credentials"] = "true";
+  }
+
+  return headers;
 }
 
 function jsonResponse(payload, status, config) {

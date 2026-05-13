@@ -18,6 +18,7 @@ export const DEFAULT_CONFIG = {
   density: "comfortable",
   proxyTemplate: DEFAULT_PROXY_TEMPLATE,
   aiWorkerUrl: DEFAULT_AI_WORKER_URL,
+  aiAuthMode: "none",
 };
 
 export function createDefaultLibrary() {
