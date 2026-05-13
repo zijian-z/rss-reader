@@ -1,121 +1,32 @@
 # RSS Reader
 
-一个采用 React、HeroUI 和前端 JavaScript 实现的三栏 RSS 阅读器：左侧订阅和文件夹，中间文章标题列表，右侧正文阅读区。桌面端可以折叠订阅栏和文章列表栏，让阅读区获得更多空间。
+一个安静、快速、可自托管的三栏 RSS 阅读器。它把订阅源、文章列表和正文放在同一个工作区里，适合每天扫新闻、技术博客、论坛更新和长文。界面尽量少打扰阅读：侧栏可以折叠，正文区有独立阅读宽度、字号、行高和主题配置，桌面和手机都可以直接使用。
 
-## 形态
+RSS Reader 是一个纯前端应用，数据保存在本机浏览器；RSS 代理和 AI 能力可以部署到 Cloudflare Worker。默认代理只转发请求，不保存用户信息。AI 接口走 Worker 转发，模型密钥留在 Worker 环境变量里，不暴露给浏览器。
 
-- 浏览器前端：`npm run dev` 或 `npm run build` 后部署 `dist/`。
-- 浏览器 + 代理：`npm run proxy` 启动本地/服务器 RSS 代理，或把 `server/proxy.js` 部署为 Cloudflare Worker。
-- 桌面 App：Electron 版本通过主进程抓取 RSS，不需要单独运行代理。
+## 亮点
 
-## 本地开发
+- 三栏阅读体验：订阅源、标题列表、正文阅读区并排展示，左右栏都可折叠。
+- 本地优先：订阅、文件夹、已读、星标和阅读设置保存在浏览器本地。
+- 配置同步：只导出订阅 URL、文件夹和设置，不导出文章缓存和正文内容。
+- 可分享文章路径：打开文章后 URL 会带上文章路径，方便复制、收藏和回到同一篇文章。
+- 内置 RSS 代理：解决浏览器直接请求 RSS 时遇到的 CORS、HTTPS 和混合内容问题。
+- AI 阅读模式：中文文章生成摘要；英文等非中文文章生成少量摘要和全文中文翻译。
+- Cloudflare Access 支持：`/rss` 可以公开，`/ai/*` 可以单独加登录保护，避免公开消耗你的模型额度。
+- 桌面版本：Electron 版本可以直接抓取 RSS，不需要额外代理。
+
+## 快速开始
 
 ```bash
 npm install
 npm run dev
 ```
 
-代理服务：
+构建 Web 版本：
 
 ```bash
-npm run proxy
+npm run build
 ```
-
-默认监听 `0.0.0.0:8787`，本机使用：
-
-```text
-http://127.0.0.1:8787/rss?url={url}
-```
-
-部署到服务器时，可以在防火墙放行端口后使用：
-
-```text
-http://服务器地址:8787/rss?url={url}
-```
-
-如果前端页面通过 HTTPS 访问，浏览器会拦截 HTTP 代理请求。生产环境建议使用 Cloudflare Worker 代理，天然是 HTTPS。
-
-可选环境变量：
-
-- `HOST`：Node 代理监听地址，默认 `0.0.0.0`。
-- `PORT`：代理端口，默认 `8787`。
-- `ALLOW_ORIGIN`：CORS 允许来源，默认 `*`。
-- `ALLOWED_HOSTS`：逗号分隔的 RSS 主机白名单，留空表示允许所有 http/https 主机。
-- `MAX_BYTES`：最大响应体字节数，默认 8 MB。
-
-## Cloudflare Worker 代理
-
-`server/proxy.js` 是 Cloudflare Workers 入口，同时被本地 Node 代理复用。首次部署前先登录 Wrangler：
-
-```bash
-npx wrangler login
-```
-
-部署：
-
-```bash
-npm run proxy:deploy
-```
-
-本地用 Wrangler 调试 Worker：
-
-```bash
-npm run proxy:dev
-```
-
-部署后，Wrangler 会输出 Worker 地址，通常类似：
-
-```text
-https://rss-reader-proxy.<你的 workers.dev 子域>.workers.dev
-```
-
-在 RSS Reader 的设置里把“代理模板”填成：
-
-```text
-https://rss-reader-proxy.<你的 workers.dev 子域>.workers.dev/rss?url={url}
-```
-
-Worker 配置在 `wrangler.jsonc`：
-
-- `ALLOW_ORIGIN`：前端地址，例如 `https://zijian-z.github.io` 或你的 Pages 地址。
-- `ALLOW_CREDENTIALS`：如果 AI 接口使用 Cloudflare Access Cookie 鉴权，需要设为 `true`，同时 `ALLOW_ORIGIN` 必须是明确的前端 Origin，不能是 `*`。
-- `ALLOWED_HOSTS`：留空表示允许代理所有 http/https RSS 地址；如果要限制来源，可填逗号分隔的主机名。
-- `MAX_BYTES`：最大响应体字节数，默认 `8388608`。
-- `AI_BASE_URL`：OpenAI 兼容接口的 base URL，默认 `https://api.openai.com/v1`。
-- `AI_MODEL`：Responses API 使用的模型，默认 `gpt-5.2`。
-
-默认代理模板是 `https://api.plunox.site/rss?url={url}`。该代理不会留存用户信息和请求记录；你也可以在设置中替换为自己的代理地址，或清空后直接请求 RSS 地址。
-
-AI 功能由同一个 Worker 的 `/ai/responses` 路由转发到模型服务，前端只配置 AI Worker URL，不保存模型服务 API Key。部署前需要设置 Worker secret：
-
-```bash
-npx wrangler secret put AI_API_KEY
-```
-
-前端设置里的 AI Worker URL 通常类似：
-
-```text
-https://api.plunox.site/ai/responses
-```
-
-如果只想保护 AI 接口，建议在 Cloudflare Zero Trust 里给 `api.plunox.site/ai/*` 创建 Access 应用，并把 `/rss` 留在 Access 之外。前端设置里的“AI 鉴权”选择 `Cloudflare Access` 后，AI 请求会携带 Access 登录 Cookie；RSS 代理请求不会携带鉴权。
-
-使用 Cloudflare Access 时还需要在 Access 应用中配置 CORS：
-
-- Origin 填前端地址，例如 `https://zijian-z.github.io`。
-- Methods 至少包含 `POST` 和 `OPTIONS`。
-- Headers 至少包含 `content-type`。如果预检请求提示缺少 `Access-Control-Allow-Origin`，通常就是 Access 应用没有允许这个 request header。
-- 允许 credentials。
-
-首次使用前，可以先打开 `https://api.plunox.site/ai/health` 完成 Access 登录；登录成功后再回到阅读器使用 AI 按钮。
-
-## 配置同步
-
-设置里的“导出配置 JSON”只导出阅读设置、文件夹和订阅地址，不包含文章内容、已读状态、星标状态或本地缓存。
-
-可以把导出的 JSON 上传到任意可直接访问的 URL，然后在另一台设备的设置里使用“从 URL 导入”完成配置同步。文件导入和 URL 导入都会替换当前设备上的配置，并清空本地文章缓存，之后应用会重新拉取订阅。
-
-默认订阅源是 `https://www.solidot.org/index.rss` 和 `https://rss.slashdot.org/Slashdot/slashdot`，都位于“科技”文件夹。
 
 桌面开发：
 
@@ -129,17 +40,115 @@ npm run electron:dev
 npm run app:dist
 ```
 
-GitHub Actions 会在 `main` 分支构建 Web 版本，并分别在 Linux、macOS、Windows 上生成桌面安装包。
+## RSS 与 AI 代理
 
-## Web 部署
+`server/proxy.js` 同时支持 RSS 代理和 AI 转发：
 
-`main` 分支推送后，GitHub Actions 会构建 Web 版本，并把 `dist/` 的内容推送到 `zijian-z/rss-reader-page` 仓库的 `main` 分支根目录。
+- `GET /rss?url={url}`：RSS 代理，默认公开。
+- `GET /health`：Worker 健康检查。
+- `GET /ai/health`：AI 路由健康检查，也可用来触发 Cloudflare Access 登录。
+- `POST /ai/responses`：AI 摘要和翻译，转发到 OpenAI Responses API 兼容接口。
 
-需要在当前仓库的 GitHub Actions secrets 中添加：
+本地启动代理：
 
-- `RSS_READER_PAGE_TOKEN`：一个能写入 `zijian-z/rss-reader-page` 的 token。
+```bash
+npm run proxy
+```
 
-然后在 `zijian-z/rss-reader-page` 仓库里启用 GitHub Pages，发布来源选择 `main` 分支的根目录。启用后通常可以通过 `https://zijian-z.github.io/rss-reader-page/` 访问。
+部署到 Cloudflare Worker：
+
+```bash
+npm run proxy:deploy
+```
+
+Worker 常用配置：
+
+| 变量 | 说明 |
+| --- | --- |
+| `ALLOW_ORIGIN` | 前端 Origin，例如 `https://zijian-z.github.io`。 |
+| `ALLOW_CREDENTIALS` | 使用 Cloudflare Access Cookie 鉴权时设为 `true`。 |
+| `ALLOWED_HOSTS` | RSS 主机白名单，留空表示允许所有 http/https 主机。 |
+| `MAX_BYTES` | RSS 响应体大小上限，默认 `8388608`。 |
+| `AI_BASE_URL` | OpenAI 兼容接口地址，默认 `https://api.openai.com/v1`。 |
+| `AI_MODEL` | Responses API 模型，默认 `gpt-5.2`。 |
+| `AI_MAX_OUTPUT_TOKENS` | AI 输出上限，默认 `12000`，较长全文翻译可适当调高。 |
+
+AI 密钥使用 Worker secret：
+
+```bash
+npx wrangler secret put AI_API_KEY
+```
+
+前端设置里的默认代理模板：
+
+```text
+https://api.plunox.site/rss?url={url}
+```
+
+前端设置里的 AI Worker URL：
+
+```text
+https://api.plunox.site/ai/responses
+```
+
+## 保护 AI 接口
+
+如果你用自己的模型 key，建议只保护 AI 路由，不保护 RSS 代理：
+
+```text
+api.plunox.site/ai/*
+```
+
+在 Cloudflare Zero Trust 里给这段路径创建 Access 应用，并把 `/rss` 留在 Access 之外。前端设置中把“AI 鉴权”切换为 `Cloudflare Access` 后，AI 请求会携带 Access 登录 Cookie。
+
+Access CORS 保留这些关键项即可：
+
+- Origin：你的前端 Origin，例如 `https://zijian-z.github.io`。
+- Methods：至少 `POST` 和 `OPTIONS`。
+- Headers：至少 `content-type`。
+- Credentials：开启。
+
+首次使用前可以打开：
+
+```text
+https://api.plunox.site/ai/health
+```
+
+登录成功后再回到阅读器点击 AI 按钮。
+
+## Web 自动部署
+
+当前仓库的 GitHub Actions 会在 `main` 分支构建 Web 版本，并把 `dist/` 推送到：
+
+```text
+zijian-z/rss-reader-page
+```
+
+需要在当前仓库配置 secret：
+
+```text
+RSS_READER_PAGE_TOKEN
+```
+
+然后在 `zijian-z/rss-reader-page` 中启用 GitHub Pages，发布来源选择 `main` 分支根目录。
+
+## 配置同步
+
+设置里的导出功能只导出：
+
+- 阅读设置
+- 文件夹
+- 订阅源 URL
+- 代理和 AI Worker 配置
+
+不会导出文章内容、AI 生成内容、已读状态、星标状态或本地缓存。你可以把导出的 JSON 放到一个可访问 URL 上，再在另一台设备里使用“从 URL 导入”完成配置同步。
+
+默认订阅源：
+
+- `https://www.solidot.org/index.rss`
+- `https://rss.slashdot.org/Slashdot/slashdot`
+
+它们默认放在“科技”文件夹里。
 
 ## 许可证
 

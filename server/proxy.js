@@ -101,6 +101,7 @@ async function handleAiRequest(request, config) {
         model: aiConfig.model,
         instructions: buildAiInstructions(),
         input: buildAiInput(article),
+        max_output_tokens: aiConfig.maxOutputTokens,
         store: false,
       }),
     });
@@ -141,6 +142,7 @@ function readAiConfig(env = {}) {
     apiKey: String(env.AI_API_KEY || ""),
     baseUrl: normalizeBaseUrl(env.AI_BASE_URL || DEFAULT_AI_BASE_URL),
     model: String(env.AI_MODEL || DEFAULT_AI_MODEL),
+    maxOutputTokens: positiveNumber(env.AI_MAX_OUTPUT_TOKENS, 12000),
   };
 }
 
@@ -154,18 +156,23 @@ function normalizeAiArticlePayload(payload) {
     author: String(payload.author || "").slice(0, 200),
     publishedAt: String(payload.publishedAt || "").slice(0, 120),
     url: String(payload.url || "").slice(0, 1000),
-    content: String(payload.content || "").slice(0, 24000),
+    content: String(payload.content || "").slice(0, 60000),
   };
 }
 
 function buildAiInstructions() {
   return [
     "你是 RSS 阅读器内置的中文阅读助手。",
-    "判断文章主要语言：如果不是中文，先翻译成自然、准确的简体中文，再总结；如果是中文，只总结。",
+    "先判断文章主要语言。",
+    "如果文章主要语言是中文，只输出少量中文总结，不要翻译。",
+    "如果文章主要语言不是中文，先输出少量中文总结，再输出全文简体中文翻译。",
+    "非中文文章的总结要短，只保留 3 到 5 个核心要点；全文翻译必须覆盖原文正文，不要只概括，不要省略主要段落。",
+    "翻译要自然、准确，保留原文信息顺序、段落层次、列表关系和必要术语。",
     "输出必须是可直接插入页面的 HTML 片段，不要 Markdown，不要代码围栏。",
     "只允许使用 h2、h3、p、ul、ol、li、strong、em、blockquote 标签。",
-    "结构固定：先给出 h2 标题“AI 摘要”；如果原文不是中文，再给出 h2 标题“中文翻译”。",
-    "摘要要覆盖核心事实、背景、结论和不确定性，避免编造原文没有的信息。",
+    "中文文章结构：h2 标题“AI 摘要”，后面给出摘要。",
+    "非中文文章结构：h2 标题“AI 摘要”，后面给出短摘要；再给出 h2 标题“全文翻译”，后面给出完整翻译。",
+    "不要编造原文没有的信息；如果原文内容明显不完整，在摘要中简短说明。",
   ].join("\n");
 }
 

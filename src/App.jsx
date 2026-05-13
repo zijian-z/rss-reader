@@ -55,9 +55,11 @@ const ACCENT_OPTIONS = [
   { value: "rose", label: "玫瑰" },
   { value: "amber", label: "琥珀" },
 ];
+const MAX_AI_CONTENT_CHARS = 60000;
 
 function App() {
   const [library, setLibrary] = useState(loadLibrary);
+  const [routeArticleId, setRouteArticleId] = useState(readRouteArticleId);
   const [mobilePane, setMobilePane] = useState("sources");
   const [query, setQuery] = useState("");
   const [isAddOpen, setAddOpen] = useState(false);
@@ -133,8 +135,10 @@ function App() {
   ]);
 
   const selectedArticle =
-    library.articles.find((article) => article.id === library.selectedArticleId) ||
-    visibleArticles[0] ||
+    library.articles.find(
+      (article) => article.id === (routeArticleId || library.selectedArticleId),
+    ) ||
+    (routeArticleId ? null : visibleArticles[0]) ||
     null;
 
   const unreadTotal = library.articles.filter((article) => !article.read).length;
@@ -197,6 +201,33 @@ function App() {
 
     return undefined;
   }, [library.feeds.length, refreshFeeds]);
+
+  useEffect(() => {
+    const syncRoute = () => setRouteArticleId(readRouteArticleId());
+
+    window.addEventListener("hashchange", syncRoute);
+    syncRoute();
+
+    return () => window.removeEventListener("hashchange", syncRoute);
+  }, []);
+
+  useEffect(() => {
+    if (!routeArticleId) {
+      return;
+    }
+
+    setLibrary((draft) => {
+      if (draft.selectedArticleId === routeArticleId) {
+        return draft;
+      }
+
+      return {
+        ...draft,
+        selectedArticleId: routeArticleId,
+      };
+    });
+    setMobilePane("reader");
+  }, [routeArticleId]);
 
   useEffect(() => {
     const minutes = Number(library.config.refreshMinutes);
@@ -305,6 +336,8 @@ function App() {
       selectedArticleId: sourceArticles[0]?.id || "",
       activeFilter: filter,
     }));
+    clearArticleRoute();
+    setRouteArticleId("");
     setMobilePane("articles");
   }
 
@@ -313,6 +346,8 @@ function App() {
       ...draft,
       selectedArticleId: articleId,
     }));
+    setRouteArticleId(articleId);
+    writeArticleRoute(articleId);
     setMobilePane("reader");
   }
 
@@ -351,7 +386,10 @@ function App() {
 
     try {
       const config = libraryRef.current.config;
-      const contentText = stripHtml(article.content || article.excerpt || "").slice(0, 24000);
+      const contentText = stripHtml(article.content || article.excerpt || "").slice(
+        0,
+        MAX_AI_CONTENT_CHARS,
+      );
       const requestOptions = {
         method: "POST",
         headers: {
@@ -1013,13 +1051,20 @@ function ArticleListPane({
               const feed = feeds.find((item) => item.id === article.feedId);
 
               return (
-                <button
-                  type="button"
+                <a
+                  href={articleRouteHref(article.id)}
                   className={`article-row ${selectedArticleId === article.id ? "selected" : ""} ${
                     article.read ? "read" : "unread"
                   }`}
                   key={article.id}
-                  onClick={() => onSelectArticle(article.id)}
+                  onClick={(event) => {
+                    if (!isPlainLeftClick(event)) {
+                      return;
+                    }
+
+                    event.preventDefault();
+                    onSelectArticle(article.id);
+                  }}
                 >
                   <span className="article-source">{feed?.title || "RSS"}</span>
                   <span className="article-title">
@@ -1032,7 +1077,7 @@ function ArticleListPane({
                     {formatShortDate(article.publishedAt || article.fetchedAt)}
                     {article.starred ? <Star size={14} fill="currentColor" /> : null}
                   </span>
-                </button>
+                </a>
               );
             })
           ) : (
@@ -1182,6 +1227,51 @@ function normalizeArticleLink(value) {
   } catch {
     return "";
   }
+}
+
+function articleRouteHref(articleId) {
+  return `#/article/${encodeURIComponent(articleId)}`;
+}
+
+function readRouteArticleId() {
+  const hash = window.location.hash.replace(/^#/, "");
+  const normalizedHash = hash.startsWith("/") ? hash : `/${hash}`;
+  const prefix = "/article/";
+
+  if (!normalizedHash.startsWith(prefix)) {
+    return "";
+  }
+
+  try {
+    return decodeURIComponent(normalizedHash.slice(prefix.length));
+  } catch {
+    return "";
+  }
+}
+
+function writeArticleRoute(articleId) {
+  const nextHash = articleRouteHref(articleId).slice(1);
+
+  if (window.location.hash !== `#${nextHash}`) {
+    window.location.hash = nextHash;
+  }
+}
+
+function clearArticleRoute() {
+  if (readRouteArticleId()) {
+    window.history.pushState(null, "", `${window.location.pathname}${window.location.search}`);
+  }
+}
+
+function isPlainLeftClick(event) {
+  return (
+    event.button === 0 &&
+    !event.defaultPrevented &&
+    !event.metaKey &&
+    !event.altKey &&
+    !event.ctrlKey &&
+    !event.shiftKey
+  );
 }
 
 function validateAiWorkerUrl(value) {

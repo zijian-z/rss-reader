@@ -613,6 +613,7 @@ button {
   padding: 14px 16px;
   border-bottom: 1px solid var(--border);
   color: var(--text);
+  text-decoration: none;
 }
 
 .compact .article-row {
@@ -623,6 +624,11 @@ button {
 .article-row:hover,
 .article-row.selected {
   background: color-mix(in srgb, var(--accent-soft) 58%, transparent);
+}
+
+.article-row:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 42%, transparent);
+  outline-offset: -2px;
 }
 
 .article-row.read .article-title,
