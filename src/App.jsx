@@ -6,6 +6,7 @@ import {
   ChevronLeft,
   Download,
   Edit3,
+  ExternalLink,
   FolderPlus,
   List,
   MonitorSmartphone,
@@ -1078,6 +1079,7 @@ function ReaderPane({
                 <ActionTooltip label="退出 AI 模式">
                   <Button
                     isIconOnly
+                    className="reader-action-button"
                     variant="flat"
                     aria-label="退出 AI 模式"
                     title="退出 AI 模式"
@@ -1090,6 +1092,7 @@ function ReaderPane({
                 <ActionTooltip label={article.aiContent ? "查看 AI 内容" : "AI 总结/翻译"}>
                   <Button
                     isIconOnly
+                    className="reader-action-button"
                     variant="flat"
                     aria-label={article.aiContent ? "查看 AI 内容" : "AI 总结/翻译"}
                     title={article.aiContent ? "查看 AI 内容" : "AI 总结/翻译"}
@@ -1107,8 +1110,8 @@ function ReaderPane({
               <ActionTooltip label={article.starred ? "取消星标" : "星标"}>
                 <Button
                   isIconOnly
-                  variant={article.starred ? "solid" : "flat"}
-                  color={article.starred ? "warning" : "default"}
+                  className={`reader-action-button ${article.starred ? "is-active" : ""}`}
+                  variant="flat"
                   aria-label={article.starred ? "取消星标" : "星标"}
                   title={article.starred ? "取消星标" : "星标"}
                   onPress={() => onToggleStar(article.id)}
@@ -1117,16 +1120,18 @@ function ReaderPane({
                 </Button>
               </ActionTooltip>
               {articleLink ? (
-                <a
-                  className="reader-link-button"
-                  href={articleLink}
-                  target="_blank"
-                  rel="noreferrer"
-                  aria-label="打开原文"
-                  title="打开原文"
-                >
-                  原文
-                </a>
+                <ActionTooltip label="打开原文">
+                  <a
+                    className="reader-action-button"
+                    href={articleLink}
+                    target="_blank"
+                    rel="noreferrer"
+                    aria-label="打开原文"
+                    title="打开原文"
+                  >
+                    <ExternalLink size={18} />
+                  </a>
+                </ActionTooltip>
               ) : null}
             </div>
           </div>
