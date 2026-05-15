@@ -6,6 +6,23 @@ export const CONFIG_EXPORT_TYPE = "rss-reader-config";
 export const CONFIG_EXPORT_VERSION = 1;
 export const DEFAULT_PROXY_TEMPLATE = "https://api.plunox.site/rss?url={url}";
 export const DEFAULT_AI_WORKER_URL = "https://api.plunox.site/ai/responses";
+export const DEFAULT_AI_CHINESE_PROMPT = `你是 RSS 阅读器内置的中文阅读助手。
+
+输出要求：
+- 只输出最终 HTML 片段，不要 Markdown、代码块、解释、思考过程或寒暄。
+- 只使用这些标签：h2、h3、p、ul、ol、li、strong、em、blockquote。
+- 必须以 <h2>AI 摘要</h2> 开始。
+- 用简体中文总结文章的核心事实、结论和关键背景。
+- 不要编造原文没有的信息；如果原文明显不完整，用一句话说明。`;
+export const DEFAULT_AI_TRANSLATION_PROMPT = `你是 RSS 阅读器内置的中文全文翻译助手。
+
+输出要求：
+- 只输出最终 HTML 片段，不要 Markdown、代码块、解释、思考过程或寒暄。
+- 只使用这些标签：h2、h3、p、ul、ol、li、strong、em、blockquote。
+- 必须以 <h2>全文翻译</h2> 开始。
+- 将原文完整翻译为自然准确的简体中文，不要摘要，不要要点列表，不要评论。
+- 保留原文顺序、段落结构、列表关系和必要术语。
+- 不要编造原文没有的信息；如果原文明显不完整，用一句话说明。`;
 
 export const DEFAULT_CONFIG = {
   refreshMinutes: 30,
@@ -19,6 +36,9 @@ export const DEFAULT_CONFIG = {
   proxyTemplate: DEFAULT_PROXY_TEMPLATE,
   aiWorkerUrl: DEFAULT_AI_WORKER_URL,
   aiAuthMode: "none",
+  aiStream: true,
+  aiChinesePrompt: DEFAULT_AI_CHINESE_PROMPT,
+  aiTranslationPrompt: DEFAULT_AI_TRANSLATION_PROMPT,
 };
 
 export function createDefaultLibrary() {

@@ -52,7 +52,8 @@ body {
 
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
 }
 
@@ -1006,7 +1007,8 @@ label strong {
 }
 
 input,
-select {
+select,
+textarea {
   width: 100%;
   min-height: 38px;
   border: 1px solid var(--border);
@@ -1018,14 +1020,42 @@ select {
 }
 
 input:focus,
-select:focus {
+select:focus,
+textarea:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+textarea {
+  min-height: 150px;
+  padding: 10px;
+  resize: vertical;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 560;
+  line-height: 1.55;
 }
 
 input[type="range"] {
   padding: 0;
   accent-color: var(--accent);
+}
+
+input[type="checkbox"] {
+  width: 18px;
+  min-height: 18px;
+  accent-color: var(--accent);
+}
+
+.checkbox-row {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 9px;
+}
+
+.checkbox-row span {
+  justify-content: flex-start;
 }
 
 .dialog-actions {

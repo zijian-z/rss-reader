@@ -31,6 +31,8 @@ import {
   createConfigExport,
   createFeed,
   createFolder,
+  DEFAULT_AI_CHINESE_PROMPT,
+  DEFAULT_AI_TRANSLATION_PROMPT,
   loadLibrary,
   normalizeConfigImport,
   normalizeLibrary,
@@ -58,7 +60,7 @@ const ACCENT_OPTIONS = [
   { value: "rose", label: "玫瑰" },
   { value: "amber", label: "琥珀" },
 ];
-const AI_CACHE_VERSION = "final-html-only-v1";
+const AI_CACHE_VERSION = "frontend-responses-stream-v1";
 const MAX_AI_CONTENT_CHARS = 60000;
 
 function App() {
@@ -469,22 +471,27 @@ function App() {
 
     try {
       const config = libraryRef.current.config;
-      const contentText = stripHtml(article.content || article.excerpt || "").slice(
-        0,
-        MAX_AI_CONTENT_CHARS,
-      );
+      const sourceText = stripHtml(article.content || article.excerpt || "");
+      const contentText = sourceText.slice(0, MAX_AI_CONTENT_CHARS);
+      const isChineseArticle = hasChineseText(article.title);
+      const expectedHeading = aiExpectedHeading(isChineseArticle);
+      let rawAiOutput = "";
+      let finalStreamText = "";
+      let lastRenderedHtml = "";
+      let lastRenderAt = 0;
       const requestOptions = {
         method: "POST",
         headers: {
           "content-type": "application/json",
         },
-        body: JSON.stringify({
-          title: article.title,
-          author: article.author,
-          publishedAt: article.publishedAt,
-          url: article.link,
-          content: contentText || article.title,
-        }),
+        body: JSON.stringify(
+          buildAiResponseRequest(article, contentText || article.title, {
+            isChineseArticle,
+            prompt: aiPromptForArticle(config, isChineseArticle),
+            stream: config.aiStream !== false,
+            truncated: sourceText.length > MAX_AI_CONTENT_CHARS,
+          }),
+        ),
       };
 
       if (config.aiAuthMode === "cloudflareAccess") {
@@ -492,43 +499,74 @@ function App() {
       }
 
       const response = await fetch(validateAiWorkerUrl(config.aiWorkerUrl), requestOptions);
-
-      const payload = await response.json().catch(() => ({}));
+      const contentType = response.headers.get("content-type") || "";
 
       if (!response.ok) {
-        const error = new Error(payload?.error || `AI 请求失败：HTTP ${response.status}`);
-        error.status = response.status;
-        error.hasJsonPayload = Boolean(payload?.error);
-        throw error;
+        throw await createAiHttpError(response);
       }
 
-      const html = sanitizeArticleHtml(payload.html || payload.outputText || payload.text || "");
+      const renderPartialOutput = () => {
+        const html = renderAiHtml(rawAiOutput, expectedHeading, { allowPartial: true });
+        const now = Date.now();
+
+        if (
+          !html ||
+          html === lastRenderedHtml ||
+          (now - lastRenderAt < 120 && html.length - lastRenderedHtml.length < 360)
+        ) {
+          return;
+        }
+
+        lastRenderedHtml = html;
+        lastRenderAt = now;
+        updateAiArticleContent(article.id, html, "");
+      };
+
+      if (response.body && contentType.includes("text/event-stream")) {
+        await readResponsesEventStream(response, {
+          onDelta(delta) {
+            rawAiOutput += delta;
+            renderPartialOutput();
+          },
+          onTextDone(text) {
+            finalStreamText = text || finalStreamText;
+          },
+          onCompleted(completedResponse) {
+            finalStreamText = extractAiOutputText(completedResponse) || finalStreamText;
+          },
+        });
+
+        if (!rawAiOutput.trim() && finalStreamText) {
+          rawAiOutput = finalStreamText;
+        }
+      } else {
+        const payload = await readAiResponsePayload(response);
+
+        if (config.aiAuthMode === "cloudflareAccess" && isCloudflareAccessResponse(payload)) {
+          const error = new Error("Cloudflare Access 登录可能已失效。");
+          error.needsAccessLogin = true;
+          throw error;
+        }
+
+        rawAiOutput = extractAiOutputText(payload);
+      }
+
+      const html = renderAiHtml(rawAiOutput, expectedHeading, { allowPartial: false });
 
       if (!html) {
         throw new Error("AI 没有返回可显示的内容");
       }
 
-      setLibrary((draft) => ({
-        ...draft,
-        articles: draft.articles.map((currentArticle) =>
-          currentArticle.id === article.id
-            ? {
-                ...currentArticle,
-                aiContent: html,
-                aiGeneratedAt: new Date().toISOString(),
-                aiMode: true,
-                aiPromptVersion: AI_CACHE_VERSION,
-              }
-            : currentArticle,
-        ),
-      }));
+      updateAiArticleContent(article.id, html, new Date().toISOString());
     } catch (error) {
       const config = libraryRef.current.config;
       const shouldPromptAccessLogin =
         config.aiAuthMode === "cloudflareAccess" &&
-        (error instanceof TypeError ||
+        (error.needsAccessLogin ||
+          error instanceof TypeError ||
           ((error.status === 401 || error.status === 403) && !error.hasJsonPayload));
 
+      clearIncompleteAiContent(article.id);
       setAiStatus({
         articleId: article.id,
         message: shouldPromptAccessLogin
@@ -543,6 +581,41 @@ function App() {
           : current,
       );
     }
+  }
+
+  function updateAiArticleContent(articleId, html, generatedAt) {
+    setLibrary((draft) => ({
+      ...draft,
+      articles: draft.articles.map((currentArticle) =>
+        currentArticle.id === articleId
+          ? {
+              ...currentArticle,
+              aiContent: html,
+              aiGeneratedAt: generatedAt || currentArticle.aiGeneratedAt || "",
+              aiMode: true,
+              aiPromptVersion: AI_CACHE_VERSION,
+            }
+          : currentArticle,
+      ),
+    }));
+  }
+
+  function clearIncompleteAiContent(articleId) {
+    setLibrary((draft) => ({
+      ...draft,
+      articles: draft.articles.map((currentArticle) =>
+        currentArticle.id === articleId &&
+        currentArticle.aiPromptVersion === AI_CACHE_VERSION &&
+        !currentArticle.aiGeneratedAt
+          ? {
+              ...currentArticle,
+              aiContent: "",
+              aiMode: false,
+              aiPromptVersion: "",
+            }
+          : currentArticle,
+      ),
+    }));
   }
 
   function removeFeed(feedId) {
@@ -1446,6 +1519,402 @@ function buildAiHealthUrl(value) {
   }
 }
 
+function hasChineseText(value) {
+  return /[\u3400-\u9fff\uf900-\ufaff]/.test(String(value || ""));
+}
+
+function aiExpectedHeading(isChineseArticle) {
+  return isChineseArticle ? "AI 摘要" : "全文翻译";
+}
+
+function aiPromptForArticle(config, isChineseArticle) {
+  const prompt = isChineseArticle ? config.aiChinesePrompt : config.aiTranslationPrompt;
+  const fallback = isChineseArticle ? DEFAULT_AI_CHINESE_PROMPT : DEFAULT_AI_TRANSLATION_PROMPT;
+  return String(prompt || fallback).trim();
+}
+
+function buildAiResponseRequest(article, contentText, options) {
+  const expectedHeading = aiExpectedHeading(options.isChineseArticle);
+  const articleType = options.isChineseArticle
+    ? "标题含中文字符，按中文文章处理：生成摘要。"
+    : "标题不含中文字符，按非中文文章处理：全文翻译为简体中文。";
+
+  return {
+    instructions: options.prompt,
+    input: [
+      `任务判定：${articleType}`,
+      `前端裁剪锚点：输出必须以 <h2>${expectedHeading}</h2> 开始。`,
+      options.truncated ? "注意：正文因为长度限制被截断，请在输出中简短说明。" : "",
+      "",
+      `Title: ${article.title || "无标题"}`,
+      article.author ? `Author: ${article.author}` : "",
+      article.publishedAt ? `Publish Time: ${article.publishedAt}` : "",
+      article.link ? `Link: ${article.link}` : "",
+      "",
+      "Content:",
+      contentText || article.title || "",
+    ]
+      .filter((line) => line !== "")
+      .join("\n"),
+    stream: Boolean(options.stream),
+    store: false,
+  };
+}
+
+async function createAiHttpError(response) {
+  const payload = await readAiResponsePayload(response);
+  const upstreamError =
+    typeof payload?.error === "string"
+      ? payload.error
+      : payload?.error?.message || payload?.message || "";
+  const error = new Error(upstreamError || `AI 请求失败：HTTP ${response.status}`);
+
+  error.status = response.status;
+  error.hasJsonPayload = Boolean(upstreamError);
+  error.needsAccessLogin = isCloudflareAccessResponse(payload);
+  return error;
+}
+
+async function readAiResponsePayload(response) {
+  const text = await response.text();
+
+  if (!text.trim()) {
+    return {};
+  }
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { output_text: text };
+  }
+}
+
+async function readResponsesEventStream(response, handlers) {
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let pending = "";
+
+  const processPendingFrames = (flush = false) => {
+    while (true) {
+      const boundary = pending.search(/\r?\n\r?\n/);
+
+      if (boundary === -1) {
+        break;
+      }
+
+      const separator = pending.slice(boundary).match(/^\r?\n\r?\n/)?.[0] || "\n\n";
+      const frame = pending.slice(0, boundary);
+      pending = pending.slice(boundary + separator.length);
+      processResponsesStreamFrame(frame, handlers);
+    }
+
+    if (flush && pending.trim()) {
+      processResponsesStreamFrame(pending, handlers);
+      pending = "";
+    }
+  };
+
+  while (true) {
+    const { done, value } = await reader.read();
+
+    if (done) {
+      break;
+    }
+
+    pending += decoder.decode(value, { stream: true });
+    processPendingFrames(false);
+  }
+
+  pending += decoder.decode();
+  processPendingFrames(true);
+}
+
+function processResponsesStreamFrame(frame, handlers) {
+  const dataLines = [];
+  let eventType = "";
+
+  for (const line of frame.split(/\r?\n/)) {
+    if (!line || line.startsWith(":")) {
+      continue;
+    }
+
+    const colonIndex = line.indexOf(":");
+    const field = colonIndex === -1 ? line : line.slice(0, colonIndex);
+    const value = colonIndex === -1 ? "" : line.slice(colonIndex + 1).replace(/^ /, "");
+
+    if (field === "event") {
+      eventType = value;
+    }
+
+    if (field === "data") {
+      dataLines.push(value);
+    }
+  }
+
+  const data = dataLines.join("\n").trim();
+
+  if (!data || data === "[DONE]") {
+    return;
+  }
+
+  let payload;
+
+  try {
+    payload = JSON.parse(data);
+  } catch {
+    if (eventType.includes("delta")) {
+      handlers.onDelta?.(data);
+    }
+    return;
+  }
+
+  dispatchResponsesStreamPayload(payload, eventType, handlers);
+}
+
+function dispatchResponsesStreamPayload(payload, eventType, handlers) {
+  const type = String(payload?.type || eventType || "");
+  const errorMessage =
+    typeof payload?.error === "string" ? payload.error : payload?.error?.message || "";
+
+  if (errorMessage || type.includes("error") || type === "response.failed") {
+    throw new Error(errorMessage || "AI 流式请求失败");
+  }
+
+  if (type === "response.output_text.delta" && typeof payload.delta === "string") {
+    handlers.onDelta?.(payload.delta);
+    return;
+  }
+
+  if (type === "response.output_text.done" && typeof payload.text === "string") {
+    handlers.onTextDone?.(payload.text);
+    return;
+  }
+
+  if (type === "response.completed") {
+    handlers.onCompleted?.(payload.response || payload);
+    return;
+  }
+
+  const chatDelta = payload?.choices?.[0]?.delta?.content;
+
+  if (typeof chatDelta === "string") {
+    handlers.onDelta?.(chatDelta);
+  }
+}
+
+function extractAiOutputText(payload) {
+  if (!payload) {
+    return "";
+  }
+
+  if (typeof payload === "string") {
+    return payload;
+  }
+
+  for (const key of ["output_text", "outputText", "html", "text", "content"]) {
+    if (typeof payload[key] === "string") {
+      return payload[key];
+    }
+  }
+
+  if (payload.response) {
+    return extractAiOutputText(payload.response);
+  }
+
+  if (Array.isArray(payload.output)) {
+    return payload.output.map(extractAiOutputText).filter(Boolean).join("\n");
+  }
+
+  if (Array.isArray(payload.content)) {
+    return payload.content.map(extractAiOutputText).filter(Boolean).join("\n");
+  }
+
+  if (Array.isArray(payload.choices)) {
+    return payload.choices.map(extractAiOutputText).filter(Boolean).join("\n");
+  }
+
+  if (payload.message) {
+    return extractAiOutputText(payload.message);
+  }
+
+  if (payload.delta) {
+    return extractAiOutputText(payload.delta);
+  }
+
+  return "";
+}
+
+function renderAiHtml(rawText, expectedHeading, { allowPartial }) {
+  const cleaned = cleanAiOutput(rawText, expectedHeading, { allowPartial });
+
+  if (!cleaned) {
+    return "";
+  }
+
+  return sanitizeArticleHtml(cleaned);
+}
+
+function cleanAiOutput(rawText, expectedHeading, { allowPartial }) {
+  let text = stripCodeFence(String(rawText || ""));
+
+  if (!text.trim()) {
+    return "";
+  }
+
+  const expectedMatch = findAiHeading(text, expectedHeading);
+
+  if (expectedMatch) {
+    return normalizeAiHeadingStart(text, expectedMatch, expectedHeading);
+  }
+
+  if (allowPartial) {
+    return "";
+  }
+
+  const anyKnownHeading = findAiHeading(text, expectedHeading === "AI 摘要" ? "全文翻译" : "AI 摘要");
+
+  if (anyKnownHeading) {
+    return normalizeAiHeadingStart(text, anyKnownHeading, expectedHeading);
+  }
+
+  const afterFinalMarker = extractAfterFinalMarker(text);
+
+  if (afterFinalMarker && afterFinalMarker !== text) {
+    text = stripCodeFence(afterFinalMarker);
+    const headingAfterMarker = findAiHeading(text, expectedHeading);
+
+    if (headingAfterMarker) {
+      return normalizeAiHeadingStart(text, headingAfterMarker, expectedHeading);
+    }
+  }
+
+  if (containsReasoningLeak(text)) {
+    return "";
+  }
+
+  if (looksLikeHtmlFragment(text)) {
+    return ensureExpectedAiHeading(text, expectedHeading);
+  }
+
+  return `<h2>${expectedHeading}</h2>${plainTextToHtml(text)}`;
+}
+
+function findAiHeading(text, heading) {
+  const headingPattern = heading === "AI 摘要" ? "AI\\s*摘要" : "全文\\s*翻译";
+  const htmlPattern = new RegExp(`<h2[^>]*>\\s*${headingPattern}\\s*</h2>`, "i");
+  const htmlMatch = htmlPattern.exec(text);
+
+  if (htmlMatch) {
+    return { index: htmlMatch.index, kind: "html" };
+  }
+
+  const markdownPattern = new RegExp(`(^|\\n)\\s*#{1,3}\\s*${headingPattern}\\s*(\\n|$)`, "i");
+  const markdownMatch = markdownPattern.exec(text);
+
+  if (markdownMatch) {
+    return {
+      index: markdownMatch.index + (markdownMatch[1] ? markdownMatch[1].length : 0),
+      kind: "line",
+    };
+  }
+
+  const plainPattern = new RegExp(`(^|\\n)\\s*${headingPattern}\\s*(\\n|$)`, "i");
+  const plainMatch = plainPattern.exec(text);
+
+  if (plainMatch) {
+    return {
+      index: plainMatch.index + (plainMatch[1] ? plainMatch[1].length : 0),
+      kind: "line",
+    };
+  }
+
+  return null;
+}
+
+function normalizeAiHeadingStart(text, match, expectedHeading) {
+  const value = stripCodeFence(text.slice(match.index)).trim();
+
+  if (match.kind === "html") {
+    return ensureExpectedAiHeading(value, expectedHeading);
+  }
+
+  const [, ...restLines] = value.split(/\r?\n/);
+  return `<h2>${expectedHeading}</h2>${plainTextOrHtmlToBody(restLines.join("\n"))}`;
+}
+
+function ensureExpectedAiHeading(html, expectedHeading) {
+  const value = stripCodeFence(html).trim();
+
+  if (/^<h2[\s>]/i.test(value)) {
+    return value.replace(/^<h2[^>]*>[\s\S]*?<\/h2>/i, `<h2>${expectedHeading}</h2>`);
+  }
+
+  return `<h2>${expectedHeading}</h2>${plainTextOrHtmlToBody(value)}`;
+}
+
+function plainTextOrHtmlToBody(value) {
+  const text = String(value || "").trim();
+  return looksLikeHtmlFragment(text) ? text : plainTextToHtml(text);
+}
+
+function plainTextToHtml(value) {
+  return String(value || "")
+    .split(/\n{2,}/)
+    .map((paragraph) => paragraph.trim())
+    .filter(Boolean)
+    .map((paragraph) => `<p>${escapeHtml(paragraph).replace(/\n/g, "<br>")}</p>`)
+    .join("");
+}
+
+function stripCodeFence(value) {
+  let text = String(value || "").trim();
+  const fullFence = /^```(?:html)?\s*([\s\S]*?)\s*```$/i.exec(text);
+
+  if (fullFence) {
+    return fullFence[1].trim();
+  }
+
+  text = text.replace(/^```(?:html)?\s*/i, "");
+  text = text.replace(/\s*```$/i, "");
+  return text.trim();
+}
+
+function extractAfterFinalMarker(value) {
+  const markerPattern = /(final answer|final output|最终答案|最终输出)\s*[:：]/gi;
+  let marker = null;
+  let match = markerPattern.exec(value);
+
+  while (match) {
+    marker = match;
+    match = markerPattern.exec(value);
+  }
+
+  return marker ? value.slice(marker.index + marker[0].length).trim() : value;
+}
+
+function containsReasoningLeak(value) {
+  return /(thinking process|analyze user input|deconstruct content|check constraints|chain of thought|思考过程|推理过程)/i.test(
+    value,
+  );
+}
+
+function looksLikeHtmlFragment(value) {
+  return /^\s*<(h2|h3|p|ul|ol|li|blockquote|strong|em)\b/i.test(value);
+}
+
+function escapeHtml(value) {
+  return String(value || "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+}
+
+function isCloudflareAccessResponse(payload) {
+  const text = extractAiOutputText(payload);
+  return /cloudflare access|cf[_-]?authorization|zero trust|access login/i.test(text);
+}
+
 function AddFeedDialog({ folders, onClose, onSubmit }) {
   const [form, setForm] = useState({
     url: "",
@@ -1678,6 +2147,36 @@ function SettingsDialog({
             </select>
             <small className="field-note">
               使用 Cloudflare Access 时，AI 请求会携带 Access 登录 Cookie；RSS 代理仍保持公开。
+            </small>
+          </label>
+          <label className="checkbox-row">
+            <input
+              checked={config.aiStream !== false}
+              onChange={(event) => onConfigChange({ aiStream: event.target.checked })}
+              type="checkbox"
+            />
+            <span>流式输出</span>
+          </label>
+          <label className="prompt-field">
+            <span>中文摘要提示词</span>
+            <textarea
+              value={config.aiChinesePrompt ?? DEFAULT_AI_CHINESE_PROMPT}
+              onChange={(event) => onConfigChange({ aiChinesePrompt: event.target.value })}
+              rows={8}
+            />
+            <small className="field-note">
+              标题含中文字符时使用。建议保留 {"<h2>AI 摘要</h2>"}，否则流式裁剪可能无法即时显示。
+            </small>
+          </label>
+          <label className="prompt-field">
+            <span>非中文全文翻译提示词</span>
+            <textarea
+              value={config.aiTranslationPrompt ?? DEFAULT_AI_TRANSLATION_PROMPT}
+              onChange={(event) => onConfigChange({ aiTranslationPrompt: event.target.value })}
+              rows={9}
+            />
+            <small className="field-note">
+              标题不含中文字符时使用。建议保留 {"<h2>全文翻译</h2>"}，否则流式裁剪可能无法即时显示。
             </small>
           </label>
         </section>

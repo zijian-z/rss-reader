@@ -2,7 +2,7 @@
 
 一个安静、快速、可自托管的三栏 RSS 阅读器。它把订阅源、文章列表和正文放在同一个工作区里，适合每天扫新闻、技术博客、论坛更新和长文。界面尽量少打扰阅读：侧栏可以折叠，正文区有独立阅读宽度、字号、行高和主题配置，桌面和手机都可以直接使用。
 
-RSS Reader 是一个纯前端应用，数据保存在本机浏览器；RSS 代理和 AI 能力可以部署到 Cloudflare Worker。默认代理只转发请求，不保存用户信息。AI 接口走 Worker 转发，模型密钥留在 Worker 环境变量里，不暴露给浏览器。
+RSS Reader 是一个纯前端应用，数据保存在本机浏览器；RSS 代理和 AI 能力可以部署到 Cloudflare Worker。默认代理只转发请求，不保存用户信息。AI 接口也只通过 Worker 转发到 Responses API 兼容接口，模型密钥留在 Worker 环境变量里，不暴露给浏览器。
 
 ## 亮点
 
@@ -11,7 +11,8 @@ RSS Reader 是一个纯前端应用，数据保存在本机浏览器；RSS 代�
 - 配置同步：只导出订阅 URL、文件夹和设置，不导出文章缓存和正文内容。
 - 可分享文章路径：打开文章后 URL 会带上文章路径，方便复制、收藏和回到同一篇文章。
 - 内置 RSS 代理：解决浏览器直接请求 RSS 时遇到的 CORS、HTTPS 和混合内容问题。
-- AI 阅读模式：标题含中文的文章生成摘要；英文等非中文标题的文章直接全文翻译成中文。
+- AI 阅读模式：标题含中文的文章生成摘要；英文等非中文标题的文章直接全文翻译成中文，支持流式输出。
+- 可调提示词：中文摘要和非中文全文翻译的提示词都在设置里，可随时调整。
 - Cloudflare Access 支持：`/rss` 可以公开，`/ai/*` 可以单独加登录保护，避免公开消耗你的模型额度。
 - 桌面版本：Electron 版本可以直接抓取 RSS，不需要额外代理。
 
@@ -47,7 +48,7 @@ npm run app:dist
 - `GET /rss?url={url}`：RSS 代理，默认公开。
 - `GET /health`：Worker 健康检查。
 - `GET /ai/health`：AI 路由健康检查，也可用来触发 Cloudflare Access 登录。
-- `POST /ai/responses`：AI 摘要或全文翻译，转发到 OpenAI Responses API 兼容接口。
+- `POST /ai/responses`：AI 转发接口，接收前端生成的 Responses API 请求体，支持 `stream: true` 和 `stream: false`。
 
 本地启动代理：
 
@@ -70,7 +71,7 @@ Worker 常用配置：
 | `ALLOWED_HOSTS` | RSS 主机白名单，留空表示允许所有 http/https 主机。 |
 | `MAX_BYTES` | RSS 响应体大小上限，默认 `8388608`。 |
 | `AI_BASE_URL` | OpenAI 兼容接口地址，默认 `https://api.openai.com/v1`。 |
-| `AI_MODEL` | Responses API 模型，默认 `gpt-5.2`。 |
+| `AI_MODEL` | Responses API 模型，默认 `gpt-5.2`；前端请求体不指定模型时使用它。 |
 | `AI_MAX_OUTPUT_TOKENS` | AI 输出上限，默认 `12000`，较长全文翻译可适当调高。 |
 
 AI 密钥使用 Worker secret：
@@ -90,6 +91,8 @@ https://api.plunox.site/rss?url={url}
 ```text
 https://api.plunox.site/ai/responses
 ```
+
+AI 的文章类型由前端按标题判断：标题含中文字符时使用“中文摘要提示词”，标题不含中文字符时使用“非中文全文翻译提示词”。这两段提示词、是否启用流式输出、AI Worker URL 和鉴权方式都在设置里保存。Worker 不负责判断文章语言、不裁剪模型输出，只把请求转发给上游并把 JSON 或 SSE 流返回给前端。
 
 ## 保护 AI 接口
 
@@ -140,6 +143,7 @@ RSS_READER_PAGE_TOKEN
 - 文件夹
 - 订阅源 URL
 - 代理和 AI Worker 配置
+- AI 提示词
 
 不会导出文章内容、AI 生成内容、已读状态、星标状态或本地缓存。你可以把导出的 JSON 放到一个可访问 URL 上，再在另一台设备里使用“从 URL 导入”完成配置同步。
 
