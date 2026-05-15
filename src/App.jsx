@@ -473,6 +473,11 @@ function App() {
       const config = libraryRef.current.config;
       const sourceText = stripHtml(article.content || article.excerpt || "");
       const contentText = sourceText.slice(0, MAX_AI_CONTENT_CHARS);
+
+      if (!contentText.trim()) {
+        throw new Error("这篇文章没有可发送给 AI 的正文内容");
+      }
+
       const isChineseArticle = hasChineseText(article.title);
       const expectedHeading = aiExpectedHeading(isChineseArticle);
       let rawAiOutput = "";
@@ -485,11 +490,9 @@ function App() {
           "content-type": "application/json",
         },
         body: JSON.stringify(
-          buildAiResponseRequest(article, contentText || article.title, {
-            isChineseArticle,
+          buildAiResponseRequest(contentText, {
             prompt: aiPromptForArticle(config, isChineseArticle),
             stream: config.aiStream !== false,
-            truncated: sourceText.length > MAX_AI_CONTENT_CHARS,
           }),
         ),
       };
@@ -1533,29 +1536,10 @@ function aiPromptForArticle(config, isChineseArticle) {
   return String(prompt || fallback).trim();
 }
 
-function buildAiResponseRequest(article, contentText, options) {
-  const expectedHeading = aiExpectedHeading(options.isChineseArticle);
-  const articleType = options.isChineseArticle
-    ? "标题含中文字符，按中文文章处理：生成摘要。"
-    : "标题不含中文字符，按非中文文章处理：全文翻译为简体中文。";
-
+function buildAiResponseRequest(contentText, options) {
   return {
     instructions: options.prompt,
-    input: [
-      `任务判定：${articleType}`,
-      `前端裁剪锚点：输出必须以 <h2>${expectedHeading}</h2> 开始。`,
-      options.truncated ? "注意：正文因为长度限制被截断，请在输出中简短说明。" : "",
-      "",
-      `Title: ${article.title || "无标题"}`,
-      article.author ? `Author: ${article.author}` : "",
-      article.publishedAt ? `Publish Time: ${article.publishedAt}` : "",
-      article.link ? `Link: ${article.link}` : "",
-      "",
-      "Content:",
-      contentText || article.title || "",
-    ]
-      .filter((line) => line !== "")
-      .join("\n"),
+    input: contentText,
     stream: Boolean(options.stream),
     store: false,
   };
