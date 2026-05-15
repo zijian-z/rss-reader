@@ -62,6 +62,8 @@ const ACCENT_OPTIONS = [
 ];
 const AI_CACHE_VERSION = "frontend-responses-stream-v1";
 const MAX_AI_CONTENT_CHARS = 60000;
+const AI_PARTIAL_RENDER_INTERVAL_MS = 60;
+const AI_PARTIAL_RENDER_MIN_CHARS = 120;
 
 function App() {
   const [library, setLibrary] = useState(loadLibrary);
@@ -515,7 +517,8 @@ function App() {
         if (
           !html ||
           html === lastRenderedHtml ||
-          (now - lastRenderAt < 120 && html.length - lastRenderedHtml.length < 360)
+          (now - lastRenderAt < AI_PARTIAL_RENDER_INTERVAL_MS &&
+            html.length - lastRenderedHtml.length < AI_PARTIAL_RENDER_MIN_CHARS)
         ) {
           return;
         }
@@ -1752,7 +1755,7 @@ function cleanAiOutput(rawText, expectedHeading, { allowPartial }) {
   }
 
   if (allowPartial) {
-    return "";
+    return cleanPartialAiOutput(text, expectedHeading);
   }
 
   const anyKnownHeading = findAiHeading(text, expectedHeading === "AI 摘要" ? "全文翻译" : "AI 摘要");
@@ -1781,6 +1784,27 @@ function cleanAiOutput(rawText, expectedHeading, { allowPartial }) {
   }
 
   return `<h2>${expectedHeading}</h2>${plainTextToHtml(text)}`;
+}
+
+function cleanPartialAiOutput(rawText, expectedHeading) {
+  let text = extractAfterFinalMarker(stripCodeFence(rawText)).trim();
+
+  if (
+    !text ||
+    containsReasoningLeak(text) ||
+    !hasChineseText(text) ||
+    text.replace(/\s+/g, "").length < 12
+  ) {
+    return "";
+  }
+
+  text = stripAiPreamble(text);
+
+  if (!text || containsReasoningLeak(text)) {
+    return "";
+  }
+
+  return ensureExpectedAiHeading(text, expectedHeading);
 }
 
 function findAiHeading(text, heading) {
@@ -1874,6 +1898,16 @@ function extractAfterFinalMarker(value) {
   }
 
   return marker ? value.slice(marker.index + marker[0].length).trim() : value;
+}
+
+function stripAiPreamble(value) {
+  return String(value || "")
+    .replace(
+      /^(以下|下面|这里)(是|为).{0,24}(摘要|总结|翻译|译文|结果)\s*[:：]?\s*/i,
+      "",
+    )
+    .replace(/^(翻译|译文|摘要|总结)\s*[:：]\s*/i, "")
+    .trim();
 }
 
 function containsReasoningLeak(value) {
