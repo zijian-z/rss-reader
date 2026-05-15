@@ -116,10 +116,13 @@ async function handleAiRequest(request, config) {
       );
     }
 
-    const outputText = extractResponseText(result);
+    const outputText = cleanAiOutput(
+      extractResponseText(result),
+      isChineseArticle ? "AI 摘要" : "全文翻译",
+    );
 
     if (!outputText) {
-      return jsonResponse({ error: "AI response did not include output text" }, 502, config);
+      return jsonResponse({ error: "AI response did not include final HTML" }, 502, config);
     }
 
     return jsonResponse({ html: outputText }, 200, config);
@@ -165,6 +168,9 @@ function buildAiInstructions(isChineseArticle) {
   const sharedRules = [
     "你是 RSS 阅读器内置的中文阅读助手。",
     "输出必须是可直接插入页面的 HTML 片段，不要 Markdown，不要代码围栏。",
+    "最终回答的第一个字符必须是 <，不要在 HTML 片段前后输出任何解释。",
+    "不要输出思考过程、分析步骤、检查清单、翻译草稿、推理内容或 Here's a thinking process 之类的文字。",
+    "如果模型内部需要推理，必须隐藏推理，只输出最终 HTML。",
     "只允许使用 h2、h3、p、ul、ol、li、strong、em、blockquote 标签。",
     "不要编造原文没有的信息；如果原文内容明显不完整，简短说明。",
   ];
@@ -216,6 +222,149 @@ function extractResponseText(result) {
     .map((content) => content?.text || "")
     .join("\n")
     .trim();
+}
+
+function cleanAiOutput(value, expectedHeading) {
+  let text = unwrapResponseText(String(value || "").trim());
+
+  if (!text) {
+    return "";
+  }
+
+  text = text
+    .replace(/<think\b[^>]*>[\s\S]*?<\/think>/gi, "")
+    .replace(/<thinking\b[^>]*>[\s\S]*?<\/thinking>/gi, "")
+    .replace(/<analysis\b[^>]*>[\s\S]*?<\/analysis>/gi, "")
+    .trim();
+
+  if (text.includes("&lt;h2") && !text.includes("<h2")) {
+    text = decodeHtmlTagEntities(text);
+  }
+
+  text = stripCodeFence(text);
+
+  const headingMatch = findHtmlHeading(text, expectedHeading);
+  if (headingMatch) {
+    return stripCodeFence(text.slice(headingMatch.index));
+  }
+
+  const plainHeading = findPlainHeading(text, expectedHeading);
+  if (plainHeading) {
+    const body = text.slice(plainHeading.end).trim();
+    return body ? ensureHeading(body, expectedHeading) : `<h2>${expectedHeading}</h2>`;
+  }
+
+  if (containsReasoningLeak(text)) {
+    return "";
+  }
+
+  return ensureHeading(text, expectedHeading);
+}
+
+function unwrapResponseText(value) {
+  const text = stripCodeFence(value);
+
+  try {
+    const parsed = JSON.parse(text);
+
+    if (typeof parsed === "string") {
+      return parsed.trim();
+    }
+
+    if (parsed && typeof parsed === "object") {
+      return String(parsed.html || parsed.outputText || parsed.text || "").trim();
+    }
+  } catch {
+    // Plain model output is the normal path.
+  }
+
+  return text;
+}
+
+function stripCodeFence(value) {
+  return String(value || "")
+    .trim()
+    .replace(/^```(?:html|json)?\s*/i, "")
+    .replace(/\s*```$/i, "")
+    .trim();
+}
+
+function findHtmlHeading(value, heading) {
+  const pattern = new RegExp(`<h2\\b[^>]*>\\s*${escapeRegExp(heading)}\\s*</h2>`, "i");
+  return pattern.exec(value);
+}
+
+function findPlainHeading(value, heading) {
+  const pattern = new RegExp(`(?:^|\\n)\\s*(?:#+\\s*)?${escapeRegExp(heading)}\\s*(?:\\n|$)`, "i");
+  const match = pattern.exec(value);
+
+  return match ? { index: match.index, end: match.index + match[0].length } : null;
+}
+
+function ensureHeading(value, heading) {
+  const text = stripCodeFence(value);
+
+  if (!text) {
+    return "";
+  }
+
+  if (findHtmlHeading(text, heading)) {
+    return text.trim();
+  }
+
+  if (/^<(h2|h3|p|ul|ol|blockquote)\b/i.test(text)) {
+    return `<h2>${heading}</h2>${text}`;
+  }
+
+  return plainTextToHtml(heading, text);
+}
+
+function plainTextToHtml(heading, value) {
+  const paragraphs = String(value || "")
+    .replace(/\r/g, "")
+    .split(/\n{2,}/)
+    .map((paragraph) => paragraph.replace(/\s*\n\s*/g, " ").trim())
+    .filter(Boolean)
+    .map((paragraph) => `<p>${escapeHtml(paragraph)}</p>`)
+    .join("");
+
+  return paragraphs ? `<h2>${heading}</h2>${paragraphs}` : "";
+}
+
+function containsReasoningLeak(value) {
+  return [
+    /here'?s a thinking process/i,
+    /analy[sz]e user input/i,
+    /deconstruct content/i,
+    /check constraints/i,
+    /translation draft/i,
+    /thinking process/i,
+    /reasoning process/i,
+    /思考过程/,
+    /推理过程/,
+  ].some((pattern) => pattern.test(value));
+}
+
+function decodeHtmlTagEntities(value) {
+  return value
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, "&");
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function hasChineseText(value) {

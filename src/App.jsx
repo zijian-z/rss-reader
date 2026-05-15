@@ -58,7 +58,7 @@ const ACCENT_OPTIONS = [
   { value: "rose", label: "玫瑰" },
   { value: "amber", label: "琥珀" },
 ];
-const AI_CACHE_VERSION = "title-language-split-v1";
+const AI_CACHE_VERSION = "final-html-only-v1";
 const MAX_AI_CONTENT_CHARS = 60000;
 
 function App() {
