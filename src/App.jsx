@@ -42,7 +42,7 @@ import {
 } from "./lib/library.js";
 import { fetchAndParseFeed, sanitizeArticleHtml } from "./lib/rss.js";
 
-import { AI_CACHE_VERSION, aiInputHash, prepareAiText, assertAiCompleted, readResponsesEventStream, waitForAi } from "./lib/ai.js";
+import { AI_CACHE_VERSION, extractAiOutputText, aiInputHash, prepareAiText, assertAiCompleted, readResponsesEventStream, waitForAi } from "./lib/ai.js";
 import { assertAiAccessResponse, aiFailureNotice } from "./lib/ai-access.js";
 import { AI_FIRST_RESPONSE_TIMEOUT_MS, AI_TOTAL_TIMEOUT_MS } from "../shared/ai-limits.js";
 
@@ -1508,48 +1508,6 @@ async function readAiResponsePayload(response) {
   } catch {
     return { output_text: text };
   }
-}
-
-function extractAiOutputText(payload) {
-  if (!payload) {
-    return "";
-  }
-
-  if (typeof payload === "string") {
-    return payload;
-  }
-
-  for (const key of ["output_text", "outputText", "html", "text", "content"]) {
-    if (typeof payload[key] === "string") {
-      return payload[key];
-    }
-  }
-
-  if (payload.response) {
-    return extractAiOutputText(payload.response);
-  }
-
-  if (Array.isArray(payload.output)) {
-    return payload.output.map(extractAiOutputText).filter(Boolean).join("\n");
-  }
-
-  if (Array.isArray(payload.content)) {
-    return payload.content.map(extractAiOutputText).filter(Boolean).join("\n");
-  }
-
-  if (Array.isArray(payload.choices)) {
-    return payload.choices.map(extractAiOutputText).filter(Boolean).join("\n");
-  }
-
-  if (payload.message) {
-    return extractAiOutputText(payload.message);
-  }
-
-  if (payload.delta) {
-    return extractAiOutputText(payload.delta);
-  }
-
-  return "";
 }
 
 function renderAiHtml(rawText, expectedHeading, { allowPartial }) {

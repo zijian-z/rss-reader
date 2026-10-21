@@ -3,7 +3,27 @@ export { waitForAi } from "../../shared/ai-timeouts.js";
 import { hashString, extractAiText } from "./rss.js";
 import { DEFAULT_AI_CHINESE_PROMPT, DEFAULT_AI_TRANSLATION_PROMPT } from "./library.js";
 import { MAX_AI_CONTENT_CHARS, AI_IDLE_TIMEOUT_MS } from "../../shared/ai-limits.js";
-export const AI_CACHE_VERSION = "structured-responses-v2";
+export const AI_CACHE_VERSION = "final-output-only-v3";
+
+// Responses output also contains reasoning/tool items. Never recursively collect arbitrary text.
+export function extractAiOutputText(payload) {
+  if (!payload || typeof payload !== "object") return "";
+  if (payload.type && !["response", "response.completed", "message", "output_text"].includes(payload.type)) return "";
+  if (payload.response) return extractAiOutputText(payload.response);
+  if (Array.isArray(payload.output)) {
+    return payload.output
+      .filter(item => item?.type === "message" && item.role === "assistant")
+      .map(extractAiOutputText).filter(Boolean).join("\n");
+  }
+  if (payload.type === "message") {
+    if (payload.role !== "assistant" || !Array.isArray(payload.content)) return "";
+    return payload.content.filter(part => part?.type === "output_text")
+      .map(part => typeof part.text === "string" ? part.text : "").filter(Boolean).join("\n");
+  }
+  if (payload.type === "output_text") return typeof payload.text === "string" ? payload.text : "";
+  // Some clients expose the final answer as a top-level convenience property.
+  return typeof payload.output_text === "string" ? payload.output_text : "";
+}
 
 export function aiInputHash(article, config) {
   const chinese = /[\u3400-\u9fff\uf900-\ufaff]/.test(article?.title || "");
@@ -142,10 +162,6 @@ function dispatchResponsesStreamPayload(payload, eventType, handlers) {
     return;
   }
 
-  const chatDelta = payload?.choices?.[0]?.delta?.content;
 
-  if (typeof chatDelta === "string") {
-    handlers.onDelta?.(chatDelta);
-  }
 }
 

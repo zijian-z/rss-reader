@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import { Window } from 'happy-dom';
 import { extractAiText } from '../src/lib/rss.js';
-import { aiInputHash, prepareAiText, assertAiCompleted, readResponsesEventStream } from '../src/lib/ai.js';
+import { extractAiOutputText, aiInputHash, prepareAiText, assertAiCompleted, readResponsesEventStream } from '../src/lib/ai.js';
 import { DEFAULT_CONFIG, DEFAULT_AI_CHINESE_PROMPT, DEFAULT_AI_TRANSLATION_PROMPT, normalizeLibrary } from '../src/lib/library.js';
 const window = new Window();
 globalThis.DOMParser = window.DOMParser;
@@ -74,4 +74,53 @@ test('previous built-in prompts migrate on load while custom prompts survive', (
   const result = normalizeLibrary({ config: { aiChinesePrompt: chinese, aiTranslationPrompt: translation } });
   assert.equal(result.config.aiChinesePrompt, DEFAULT_AI_CHINESE_PROMPT);
   assert.equal(result.config.aiTranslationPrompt, DEFAULT_AI_TRANSLATION_PROMPT);
+});
+
+// Reproduces providers returning both reasoning_text and output_text in the final response.
+test('final extraction excludes reasoning, summaries and tool output even if they contain HTML headings', () => {
+  const translated = '<h2>全文翻译</h2><p>正确译文。</p>';
+  const reasoning = { type: 'reasoning', content: [{ type: 'reasoning_text', text: 'Internal drafting mentions <h2>全文翻译</h2> but is not the answer.' }], summary: [{ type: 'summary_text', text: 'Not article content' }] };
+  const payload = { status: 'completed', output: [
+    reasoning,
+    { type: 'function_call', text: 'tool text' },
+    { type: 'message', role: 'user', content: [{ type: 'output_text', text: 'not the assistant answer' }] },
+    { type: 'message', role: 'assistant', content: [
+      { type: 'reasoning_text', text: 'still not the answer' },
+      { type: 'output_text', text: translated },
+    ] },
+  ] };
+  assert.equal(extractAiOutputText(payload), translated);
+  assert.equal(extractAiOutputText(reasoning), '');
+  assert.equal(extractAiOutputText({ type: 'reasoning_text', text: 'draft' }), '');
+  assert.equal(extractAiOutputText({ output: [reasoning] }), '');
+  assert.equal(extractAiOutputText({ text: 'unknown field' }), '');
+  assert.equal(extractAiOutputText({ output_text: translated }), translated);
+});
+
+test('reasoning stream events and completed-response reasoning never enter the rendered text', async () => {
+  const answer = '<h2>全文翻译</h2><p>最终译文。</p>';
+  const completed = { status: 'completed', output: [
+    { type: 'reasoning', content: [{ type: 'reasoning_text', text: '<h2>全文翻译</h2> Drafting notes' }] },
+    { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: answer }] },
+  ] };
+  const events = [
+    { type: 'response.reasoning_text.delta', delta: 'Drafting notes', choices: [{ delta: { content: 'never use generic chat fallback' } }] },
+    { type: 'response.reasoning_text.done', text: 'Drafting notes' },
+    { type: 'response.output_item.done', item: completed.output[0] },
+    { type: 'response.output_text.delta', delta: answer },
+    { type: 'response.output_text.done', text: answer },
+    { type: 'response.completed', response: completed },
+  ];
+  let streamed = '';
+  let done = '';
+  let final = '';
+  await readResponsesEventStream(response(events.map(frame).join(''), 7), {
+    onDelta(text) { streamed += text; },
+    onTextDone(text) { done = text; },
+    onCompleted(payload) { final = extractAiOutputText(payload); },
+  });
+  assert.equal(streamed, answer);
+  assert.equal(done, answer);
+  assert.equal(final, answer);
+  assert.equal(final.match(/<h2>/g).length, 1);
 });
