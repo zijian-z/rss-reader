@@ -31,6 +31,7 @@ import {
   createConfigExport,
   createFeed,
   createFolder,
+  DEFAULT_AI_WORKER_URL,
   DEFAULT_AI_CHINESE_PROMPT,
   DEFAULT_AI_TRANSLATION_PROMPT,
   loadLibrary,
@@ -1504,7 +1505,9 @@ function isPlainLeftClick(event) {
 }
 
 function validateAiWorkerUrl(value) {
-  const url = new URL(String(value || "").trim());
+  const input = String(value || "").trim();
+  if (!input) throw new Error("请先在设置里填写有效的 AI 接口地址");
+  const url = new URL(input, window.location.href);
 
   if (!["http:", "https:"].includes(url.protocol)) {
     throw new Error("请先在设置里填写有效的 AI Worker URL");
@@ -1521,7 +1524,7 @@ function buildAiHealthUrl(value) {
     url.hash = "";
     return url.href;
   } catch {
-    return "https://api.plunox.site/ai/health";
+    return "/ai/health";
   }
 }
 
@@ -2135,7 +2138,7 @@ function SettingsDialog({
               type="text"
             />
             <small className="field-note">
-              默认代理不会留存用户信息和请求记录；也可以替换为自己的代理地址，或清空后直接请求 RSS。
+              默认使用本站 /rss 接口；也可以填写其他代理地址，或清空后直接请求 RSS。
             </small>
           </label>
         </section>
@@ -2143,15 +2146,15 @@ function SettingsDialog({
         <section className="settings-section ai-settings-section">
           <div className="section-heading">
             <h3>AI</h3>
-            <p>填入部署在 Worker 上的 AI 接口地址。模型厂商的 Base URL、模型和 API Key 放在 Worker 环境变量里。</p>
+            <p>默认使用本站 AI 接口，也支持其他服务器地址。模型和 API Key 在服务端配置。</p>
           </div>
           <label>
-            <span>AI Worker URL</span>
+            <span>AI 接口地址</span>
             <input
               value={config.aiWorkerUrl || ""}
               onChange={(event) => onConfigChange({ aiWorkerUrl: event.target.value })}
-              placeholder="https://api.example.com/ai/responses"
-              type="url"
+              placeholder={DEFAULT_AI_WORKER_URL}
+              type="text"
             />
           </label>
           <label>

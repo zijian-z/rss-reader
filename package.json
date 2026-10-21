@@ -15,11 +15,14 @@
     "build": "vite build",
     "preview": "vite preview --host 0.0.0.0",
     "proxy": "node server/node-proxy.js",
-    "proxy:dev": "npx wrangler dev",
-    "proxy:deploy": "npx wrangler deploy",
+    "proxy:dev": "npm run dev:worker",
+    "proxy:deploy": "npm run deploy",
     "electron:dev": "concurrently -k \"vite --host 0.0.0.0\" \"wait-on http://127.0.0.1:5173 && VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron .\"",
     "app:pack": "npm run build && electron-builder --dir",
-    "app:dist": "npm run build && electron-builder --publish never"
+    "app:dist": "npm run build && electron-builder --publish never",
+    "deploy": "wrangler deploy",
+    "dev:worker": "wrangler dev",
+    "test": "node --test"
   },
   "dependencies": {
     "@heroui/react": "latest",
@@ -35,8 +38,9 @@
     "electron": "latest",
     "electron-builder": "latest",
     "tailwindcss": "latest",
+    "vite": "latest",
     "wait-on": "latest",
-    "vite": "latest"
+    "wrangler": "4.151.3"
   },
   "build": {
     "appId": "com.zijianz.rssreader",

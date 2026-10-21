@@ -4,12 +4,25 @@
   "compatibility_date": "2026-05-12",
   "workers_dev": true,
   "vars": {
-    "ALLOW_ORIGIN": "https://zijian-z.github.io",
-    "ALLOW_CREDENTIALS": "true",
     "ALLOWED_HOSTS": "",
     "MAX_BYTES": "8388608",
     "AI_BASE_URL": "https://api.openai.com/v1",
     "AI_MODEL": "gpt-5.2",
     "AI_MAX_OUTPUT_TOKENS": "12000"
-  }
+  },
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "build": {
+    "command": "npm run build",
+    "watch_dir": [
+      "src",
+      "index.html",
+      "vite.config.js"
+    ]
+  },
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "run_worker_first": true
+  },
+  "keep_vars": true
 }

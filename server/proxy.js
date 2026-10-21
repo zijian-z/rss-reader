@@ -4,7 +4,13 @@ const DEFAULT_AI_MODEL = "gpt-5.2";
 
 export default {
   fetch(request, env = {}) {
-    return handleProxyRequest(request, env);
+    const { pathname } = new URL(request.url);
+    const isApi = pathname === "/rss" || pathname.startsWith("/rss/") ||
+      pathname === "/health" || pathname === "/ai" || pathname.startsWith("/ai/");
+
+    if (isApi) return handleProxyRequest(request, env);
+    if (env.ASSETS) return env.ASSETS.fetch(request);
+    return new Response("Not found", { status: 404 });
   },
 };
 
@@ -130,7 +136,7 @@ async function handleAiRequest(request, config) {
 export function readProxyConfig(env = {}) {
   return {
     env,
-    allowOrigin: String(env.ALLOW_ORIGIN || "*"),
+    allowOrigin: String(env.ALLOW_ORIGIN || ""),
     allowCredentials: isTruthy(env.ALLOW_CREDENTIALS),
     allowedHosts: parseAllowedHosts(env.ALLOWED_HOSTS || ""),
     maxBytes: positiveNumber(env.MAX_BYTES, DEFAULT_MAX_BYTES),
@@ -214,6 +220,8 @@ function isTruthy(value) {
 }
 
 function corsHeaders(config) {
+  if (!config.allowOrigin) return {};
+
   const headers = {
     "access-control-allow-origin": config.allowOrigin,
     "access-control-allow-methods": "GET, POST, OPTIONS",

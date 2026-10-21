@@ -30,7 +30,7 @@ export function uid(prefix = "id") {
 }
 
 export async function fetchAndParseFeed(feed, proxyTemplate = "") {
-  const url = buildFetchUrl(feed.url, proxyTemplate);
+  const url = window.rssBridge?.fetchFeed ? feed.url : buildFetchUrl(feed.url, proxyTemplate);
   const text = await fetchFeedText(url);
 
   return parseFeedXml(text, feed);

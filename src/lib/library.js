@@ -1,11 +1,11 @@
 import { uid } from "./rss.js";
 
 export const STORAGE_KEY = "rss-reader-library-v1";
-export const CURRENT_SCHEMA_VERSION = 2;
+export const CURRENT_SCHEMA_VERSION = 3;
 export const CONFIG_EXPORT_TYPE = "rss-reader-config";
 export const CONFIG_EXPORT_VERSION = 1;
-export const DEFAULT_PROXY_TEMPLATE = "https://api.plunox.site/rss?url={url}";
-export const DEFAULT_AI_WORKER_URL = "https://api.plunox.site/ai/responses";
+export const DEFAULT_PROXY_TEMPLATE = "/rss?url={url}";
+export const DEFAULT_AI_WORKER_URL = "/ai/responses";
 export const DEFAULT_AI_CHINESE_PROMPT = `你是 RSS 阅读器内置的中文阅读助手。
 
 输出要求：
@@ -148,10 +148,7 @@ export function normalizeConfigImport(input) {
 
   return {
     schemaVersion: CURRENT_SCHEMA_VERSION,
-    config: {
-      ...DEFAULT_CONFIG,
-      ...(typeof source.config === "object" && source.config ? source.config : {}),
-    },
+    config: normalizeConfig(source.config),
     folders: normalizedFolders,
     feeds,
     articles: [],
@@ -166,10 +163,7 @@ export function normalizeLibrary(input) {
   const folders = Array.isArray(input?.folders) ? input.folders : fallback.folders;
   const feeds = Array.isArray(input?.feeds) ? input.feeds : fallback.feeds;
   const articles = Array.isArray(input?.articles) ? input.articles : [];
-  const config = {
-    ...DEFAULT_CONFIG,
-    ...(typeof input?.config === "object" && input.config ? input.config : {}),
-  };
+  const config = normalizeConfig(input?.config);
   const schemaVersion = Number(input?.schemaVersion || 1);
 
   if (schemaVersion < 2 && !config.proxyTemplate) {
@@ -189,6 +183,18 @@ export function normalizeLibrary(input) {
     activeFilter:
       typeof input?.activeFilter === "string" ? input.activeFilter : fallback.activeFilter,
   };
+}
+
+// Migrate the former built-in endpoints while preserving custom servers and direct RSS mode.
+export function normalizeConfig(input) {
+  const config = { ...DEFAULT_CONFIG, ...(input && typeof input === "object" ? input : {}) };
+  if (config.proxyTemplate === "https://api.plunox.site/rss?url={url}") {
+    config.proxyTemplate = DEFAULT_PROXY_TEMPLATE;
+  }
+  if (config.aiWorkerUrl === "https://api.plunox.site/ai/responses") {
+    config.aiWorkerUrl = DEFAULT_AI_WORKER_URL;
+  }
+  return config;
 }
 
 export function createFolder(name) {

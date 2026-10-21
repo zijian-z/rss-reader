@@ -1,6 +1,6 @@
 # RSS Reader
 
-RSS Reader 是一个纯前端应用，数据保存在本机浏览器；RSS 代理和 AI 能力可以部署到 Cloudflare Worker。默认代理只转发请求，不保存用户信息。AI 接口也只通过 Worker 转发到 Responses API 兼容接口，模型密钥留在 Worker 环境变量里，不暴露给浏览器。
+RSS Reader 的前端静态资源、RSS 代理和 AI 接口统一部署在一个 Cloudflare Worker，数据仍保存在本机浏览器。默认代理只转发请求，不保存用户信息。AI 接口也只通过 Worker 转发到 Responses API 兼容接口，模型密钥留在 Worker 环境变量里，不暴露给浏览器。
 
 ## 亮点
 
@@ -54,84 +54,76 @@ npm run app:dist
 npm run proxy
 ```
 
-部署到 Cloudflare Worker：
+## 手动部署到 Cloudflare
+
+在仓库根目录执行（Node.js 22 或更新版本）：
 
 ```bash
-npm run proxy:deploy
+npm ci
+npx wrangler login
+npm run deploy
 ```
 
-Worker 常用配置：
+`npm run deploy` 和 `npx wrangler deploy` 都会先执行 `npm run build`，再将 `dist/` 和后端一起发布。不要只上传 `dist/`，否则不会包含 RSS / AI 接口。
+
+默认继续使用现有 Worker 名称 `rss-reader-proxy`，避免意外创建新 Worker；如需更换，在 `wrangler.jsonc` 修改 `name`，并为新 Worker 重新配置密钥。无需绑定固定域名，访问部署返回的 workers.dev 地址或自行绑定的域名即可。
+
+如果在 Cloudflare 控制台连接 Git 仓库后手动触发构建部署，使用：
+
+| 项目 | 值 |
+| --- | --- |
+| 根目录 | 仓库根目录 |
+| 构建命令 | 留空（Wrangler 会构建前端） |
+| 部署命令 | `npm run deploy` |
+
+关闭该项目的自动构建触发即可保持手动发布。`npm run build` 仅构建前端，不会发布。
+
+前端默认地址均为同源相对路径：
+
+```text
+/rss?url={url}
+/ai/responses
+```
+
+旧配置中内置的 api.plunox.site 地址会在加载本地数据或导入配置时迁移为相对路径；自定义服务器地址保持不变。AI 设置支持相对路径和完整 http/https 地址。Electron 直接抓取 RSS；桌面端 AI 需要填写已部署 Worker 的完整地址。
+
+Worker 环境变量可在 Cloudflare 控制台设置（`keep_vars` 会保留未写在配置文件中的变量；`wrangler.jsonc` 中的同名变量优先）：
 
 | 变量 | 说明 |
 | --- | --- |
-| `ALLOW_ORIGIN` | 前端 Origin，例如 `https://zijian-z.github.io`。 |
-| `ALLOW_CREDENTIALS` | 使用 Cloudflare Access Cookie 鉴权时设为 `true`。 |
-| `ALLOWED_HOSTS` | RSS 主机白名单，留空表示允许所有 http/https 主机。 |
-| `MAX_BYTES` | RSS 响应体大小上限，默认 `8388608`。 |
-| `AI_BASE_URL` | OpenAI 兼容接口地址，默认 `https://api.openai.com/v1`。 |
-| `AI_MODEL` | Responses API 模型，默认 `gpt-5.2`；前端请求体不指定模型时使用它。 |
-| `AI_MAX_OUTPUT_TOKENS` | AI 输出上限，默认 `12000`，较长全文翻译可适当调高。 |
+| `ALLOWED_HOSTS` | RSS 主机白名单，留空允许所有 http/https 主机。 |
+| `MAX_BYTES` | RSS 响应体上限，默认 `8388608`。 |
+| `AI_BASE_URL` | Responses API 兼容地址，默认 `https://api.openai.com/v1`。 |
+| `AI_MODEL` | 默认 `gpt-5.2`。 |
+| `AI_MAX_OUTPUT_TOKENS` | 默认 `12000`。 |
+| `ALLOW_ORIGIN` | 仅其他站点 / 桌面端跨域调用时按需设置；同源部署无需配置。 |
+| `ALLOW_CREDENTIALS` | 跨域使用 Access Cookie 时设为 `true`。 |
 
-AI 密钥使用 Worker secret：
+AI 密钥使用 secret，已有 Worker 上的 secret 在部署时保留：
 
 ```bash
 npx wrangler secret put AI_API_KEY
 ```
 
-前端设置里的默认代理模板：
+本地验证完整前后端：
 
-```text
-https://api.plunox.site/rss?url={url}
+```bash
+npm run dev:worker
 ```
 
-前端设置里的 AI Worker URL：
-
-```text
-https://api.plunox.site/ai/responses
-```
+打开终端显示的本地地址。开发时也可同时运行 `npm run dev` 和 `npm run proxy`，Vite 会将 `/rss`、`/ai`、`/health` 转发到本地 8787 端口。AI 本地密钥放在 `.dev.vars`（Wrangler）或进程环境变量（Node 代理），不要提交。
 
 AI 的文章类型由前端按标题判断：标题含中文字符时使用“中文摘要提示词”，标题不含中文字符时使用“非中文全文翻译提示词”。标题只在浏览器本地用于选择提示词；发送给 Worker 和模型的 `input` 只包含正文文本，不包含标题、作者、发布时间或原文链接。这两段提示词、是否启用流式输出、AI Worker URL 和鉴权方式都在设置里保存。Worker 不负责判断文章语言、不裁剪模型输出，只把请求转发给上游并把 JSON 或 SSE 流返回给前端。
 
 ## 保护 AI 接口
 
-如果你用自己的模型 key，建议只保护 AI 路由，不保护 RSS 代理：
+如果使用自己的模型 key，可在 Cloudflare Zero Trust 中给阅读器实际访问域名的 `/ai/*` 路径创建 Access 应用，或保护整个站点。登录入口为同一站点的 `/ai/health`。同源请求会自动携带本站 Cookie，无需跨域 CORS 配置；设置中的 Cloudflare Access 模式还可在登录过期时引导重新登录。
 
-```text
-api.plunox.site/ai/*
-```
+## GitHub Actions
 
-在 Cloudflare Zero Trust 里给这段路径创建 Access 应用，并把 `/rss` 留在 Access 之外。前端设置中把“AI 鉴权”切换为 `Cloudflare Access` 后，AI 请求会携带 Access 登录 Cookie。
+Actions 仅构建 Web 和桌面安装包，不再向 `rss-reader-page` 推送，也不会部署 Cloudflare。旧的 `RSS_READER_PAGE_TOKEN` 不再需要。
 
-Access CORS 保留这些关键项即可：
-
-- Origin：你的前端 Origin，例如 `https://zijian-z.github.io`。
-- Methods：至少 `POST` 和 `OPTIONS`。
-- Headers：至少 `content-type`。
-- Credentials：开启。
-
-首次使用前可以打开：
-
-```text
-https://api.plunox.site/ai/health
-```
-
-登录成功后再回到阅读器点击 AI 按钮。
-
-## Web 自动部署
-
-当前仓库的 GitHub Actions 会在 `main` 分支构建 Web 版本，并把 `dist/` 推送到：
-
-```text
-zijian-z/rss-reader-page
-```
-
-需要在当前仓库配置 secret：
-
-```text
-RSS_READER_PAGE_TOKEN
-```
-
-然后在 `zijian-z/rss-reader-page` 中启用 GitHub Pages，发布来源选择 `main` 分支根目录。
+切换域名后浏览器本地存储不会自动迁移。请先在旧网站导出配置，再在新网站导入；配置导出不包含文章、星标和已读状态。
 
 ## 配置同步
 
