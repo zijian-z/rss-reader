@@ -1,6 +1,4 @@
 const DEFAULT_MAX_BYTES = 8 * 1024 * 1024;
-const DEFAULT_AI_BASE_URL = "https://api.openai.com/v1";
-const DEFAULT_AI_MODEL = "gpt-5.2";
 
 export default {
   fetch(request, env = {}) {
@@ -88,10 +86,11 @@ async function handleAiRequest(request, config) {
     return jsonResponse({ error: "Only POST is supported" }, 405, config);
   }
 
-  const aiConfig = readAiConfig(config.env);
-
-  if (!aiConfig.apiKey) {
-    return jsonResponse({ error: "AI_API_KEY is not configured" }, 500, config);
+  let aiConfig;
+  try {
+    aiConfig = readAiConfig(config.env);
+  } catch (error) {
+    return jsonResponse({ error: error.message }, 500, config);
   }
 
   try {
@@ -144,10 +143,13 @@ export function readProxyConfig(env = {}) {
 }
 
 function readAiConfig(env = {}) {
+  for (const key of ["AI_API_KEY", "AI_BASE_URL", "AI_MODEL"]) {
+    if (!String(env[key] || "").trim()) throw new Error(`${key} is not configured`);
+  }
   return {
     apiKey: String(env.AI_API_KEY || ""),
-    baseUrl: normalizeBaseUrl(env.AI_BASE_URL || DEFAULT_AI_BASE_URL),
-    model: String(env.AI_MODEL || DEFAULT_AI_MODEL),
+    baseUrl: normalizeBaseUrl(env.AI_BASE_URL),
+    model: String(env.AI_MODEL).trim(),
     maxOutputTokens: positiveNumber(env.AI_MAX_OUTPUT_TOKENS, 12000),
   };
 }
@@ -180,7 +182,7 @@ async function upstreamErrorPayload(upstream) {
 }
 
 function normalizeBaseUrl(value) {
-  const url = new URL(String(value || DEFAULT_AI_BASE_URL));
+  const url = new URL(String(value).trim());
   url.pathname = url.pathname.replace(/\/+$/, "");
   url.search = "";
   url.hash = "";

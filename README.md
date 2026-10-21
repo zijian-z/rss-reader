@@ -87,14 +87,14 @@ npm run deploy
 
 旧配置中内置的 api.plunox.site 地址会在加载本地数据或导入配置时迁移为相对路径；自定义服务器地址保持不变。AI 设置支持相对路径和完整 http/https 地址。Electron 直接抓取 RSS；桌面端 AI 需要填写已部署 Worker 的完整地址。
 
-Worker 环境变量可在 Cloudflare 控制台设置（`keep_vars` 会保留未写在配置文件中的变量；`wrangler.jsonc` 中的同名变量优先）：
+Worker 环境变量统一在 Cloudflare 控制台设置。仓库不设置部署变量，也不内置 AI 服务商地址或模型；`keep_vars: true` 会在后续部署时保留控制台配置。启用 AI 必须配置 `AI_API_KEY`（Secret）、`AI_BASE_URL` 和 `AI_MODEL`，RSS 阅读无需配置变量。
 
 | 变量 | 说明 |
 | --- | --- |
 | `ALLOWED_HOSTS` | RSS 主机白名单，留空允许所有 http/https 主机。 |
 | `MAX_BYTES` | RSS 响应体上限，默认 `8388608`。 |
-| `AI_BASE_URL` | Responses API 兼容地址，默认 `https://api.openai.com/v1`。 |
-| `AI_MODEL` | 默认 `gpt-5.2`。 |
+| `AI_BASE_URL` | 必填：Responses API 兼容 Base URL；OpenRouter 填 `https://openrouter.ai/api/v1`，不要加 `/responses`。 |
+| `AI_MODEL` | 必填：服务商的完整模型 ID，OpenRouter 使用其模型页面上的 `厂商/模型名`。 |
 | `AI_MAX_OUTPUT_TOKENS` | 默认 `12000`。 |
 | `ALLOW_ORIGIN` | 仅其他站点 / 桌面端跨域调用时按需设置；同源部署无需配置。 |
 | `ALLOW_CREDENTIALS` | 跨域使用 Access Cookie 时设为 `true`。 |

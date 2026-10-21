@@ -3,13 +3,6 @@
   "main": "server/proxy.js",
   "compatibility_date": "2026-05-12",
   "workers_dev": true,
-  "vars": {
-    "ALLOWED_HOSTS": "",
-    "MAX_BYTES": "8388608",
-    "AI_BASE_URL": "https://api.openai.com/v1",
-    "AI_MODEL": "gpt-5.2",
-    "AI_MAX_OUTPUT_TOKENS": "12000"
-  },
   "$schema": "./node_modules/wrangler/config-schema.json",
   "build": {
     "command": "npm run build",
