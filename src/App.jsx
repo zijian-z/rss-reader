@@ -20,6 +20,7 @@ import {
   Search,
   Settings,
   Sparkles,
+  Square,
   Star,
   Trash2,
   Undo2,
@@ -39,7 +40,11 @@ import {
   normalizeLibrary,
   saveLibrary,
 } from "./lib/library.js";
-import { fetchAndParseFeed, sanitizeArticleHtml, stripHtml } from "./lib/rss.js";
+import { fetchAndParseFeed, sanitizeArticleHtml } from "./lib/rss.js";
+
+import { AI_CACHE_VERSION, aiInputHash, prepareAiText, assertAiCompleted, readResponsesEventStream, waitForAi } from "./lib/ai.js";
+import { assertAiAccessResponse, aiFailureNotice } from "./lib/ai-access.js";
+import { AI_FIRST_RESPONSE_TIMEOUT_MS, AI_TOTAL_TIMEOUT_MS } from "../shared/ai-limits.js";
 
 const formatter = new Intl.DateTimeFormat("zh-CN", {
   month: "short",
@@ -61,8 +66,6 @@ const ACCENT_OPTIONS = [
   { value: "rose", label: "玫瑰" },
   { value: "amber", label: "琥珀" },
 ];
-const AI_CACHE_VERSION = "frontend-responses-stream-v1";
-const MAX_AI_CONTENT_CHARS = 60000;
 const AI_PARTIAL_RENDER_INTERVAL_MS = 60;
 const AI_PARTIAL_RENDER_MIN_CHARS = 120;
 
@@ -82,6 +85,8 @@ function App() {
   const libraryRef = useRef(library);
   const lastReaderScrollTopRef = useRef(0);
   const accessLoginStartedAtRef = useRef(0);
+  const activeAiRef = useRef(null);
+  useEffect(() => () => activeAiRef.current?.abort(), []);
 
   useEffect(() => {
     libraryRef.current = library;
@@ -292,7 +297,7 @@ function App() {
         ...article,
         read: existingById.get(article.id)?.read || false,
         starred: existingById.get(article.id)?.starred || false,
-        ...currentAiCache(existingById.get(article.id)),
+        ...currentAiCache(existingById.get(article.id), article, draft.config),
       }));
       const otherArticles = draft.articles.filter((article) => article.feedId !== feedId);
       const nextArticles = [...mergedArticles, ...otherArticles].slice(0, 1500);
@@ -392,26 +397,6 @@ function App() {
     }));
   }
 
-  function resetAiContent(articleId) {
-    setAiStatus((current) =>
-      current.articleId === articleId ? { articleId: "", message: "", loginUrl: "" } : current,
-    );
-    setLibrary((draft) => ({
-      ...draft,
-      articles: draft.articles.map((article) =>
-        article.id === articleId
-          ? {
-              ...article,
-              aiContent: "",
-              aiGeneratedAt: "",
-              aiMode: false,
-              aiPromptVersion: "",
-            }
-          : article,
-      ),
-    }));
-  }
-
   function handleReaderScroll(event) {
     if (mobilePane !== "reader") {
       return;
@@ -465,164 +450,110 @@ function App() {
     document.addEventListener("visibilitychange", reloadWhenVisible);
   }
 
-  async function runAiForArticle(article) {
-    if (!article) {
-      return;
-    }
-
+  async function runAiForArticle(article, { force = false } = {}) {
+    if (!article || activeAiRef.current) return;
+    const controller = new AbortController();
+    activeAiRef.current = controller;
+    const totalTimer = setTimeout(() => controller.abort(new Error("AI 处理超时，请稍后重试。")), AI_TOTAL_TIMEOUT_MS);
+    const config = { ...libraryRef.current.config };
+    let inputHash = "";
+    let providerHash = "";
+    let previous = null;
+    let wrotePartial = false;
     setAiStatus({ articleId: article.id, message: "" });
-
     try {
-      const config = libraryRef.current.config;
-      const sourceText = stripHtml(article.content || article.excerpt || "");
-      const contentText = sourceText.slice(0, MAX_AI_CONTENT_CHARS);
-
-      if (!contentText.trim()) {
-        throw new Error("这篇文章没有可发送给 AI 的正文内容");
+      const contentText = prepareAiText(article);
+      inputHash = aiInputHash(article, config);
+      previous = currentAiCache(article, article, config);
+      const credentials = config.aiAuthMode === "cloudflareAccess" ? "include" : "same-origin";
+      const health = await waitForAi(fetch(buildAiHealthUrl(config.aiWorkerUrl), {
+        credentials, redirect: "manual", cache: "no-store", signal: controller.signal,
+      }), controller.signal, AI_FIRST_RESPONSE_TIMEOUT_MS);
+      assertAiAccessResponse(health);
+      if (!health.ok) throw await createAiHttpError(health);
+      if (!(health.headers.get("content-type") || "").includes("application/json")) {
+        throw Object.assign(new Error("请先登录 Cloudflare Access。"), { needsAccessLogin: true });
       }
-
+      const healthPayload = await waitForAi(health.json(), controller.signal);
+      providerHash = healthPayload.providerHash || "";
+      if (!providerHash) throw new Error("AI 服务尚未配置，请检查 Worker 环境变量或更新部署。");
+      if (!force && previous.aiGeneratedAt && previous.aiProviderHash === providerHash) {
+        toggleAiMode(article.id, true);
+        return;
+      }
       const isChineseArticle = hasChineseText(article.title);
       const expectedHeading = aiExpectedHeading(isChineseArticle);
       let rawAiOutput = "";
       let finalStreamText = "";
       let lastRenderedHtml = "";
       let lastRenderAt = 0;
-      const requestOptions = {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-        },
-        body: JSON.stringify(
-          buildAiResponseRequest(contentText, {
-            prompt: aiPromptForArticle(config, isChineseArticle),
-            stream: config.aiStream !== false,
-          }),
-        ),
-      };
-
-      if (config.aiAuthMode === "cloudflareAccess") {
-        requestOptions.credentials = "include";
-      }
-
-      const response = await fetch(validateAiWorkerUrl(config.aiWorkerUrl), requestOptions);
-      const contentType = response.headers.get("content-type") || "";
-
-      if (!response.ok) {
-        throw await createAiHttpError(response);
-      }
-
+      const response = await waitForAi(fetch(validateAiWorkerUrl(config.aiWorkerUrl), {
+        method: "POST", credentials, redirect: "manual", signal: controller.signal,
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(buildAiResponseRequest(contentText, {
+          prompt: aiPromptForArticle(config, isChineseArticle), stream: config.aiStream !== false,
+        })),
+      }), controller.signal, AI_FIRST_RESPONSE_TIMEOUT_MS);
+      assertAiAccessResponse(response);
+      if (!response.ok) throw await createAiHttpError(response);
+      // Use the configuration that actually served the request if deployment changed after /health.
+      providerHash = response.headers.get("x-ai-provider-hash") || providerHash;
       const renderPartialOutput = () => {
         const html = renderAiHtml(rawAiOutput, expectedHeading, { allowPartial: true });
         const now = Date.now();
-
-        if (
-          !html ||
-          html === lastRenderedHtml ||
-          (now - lastRenderAt < AI_PARTIAL_RENDER_INTERVAL_MS &&
-            html.length - lastRenderedHtml.length < AI_PARTIAL_RENDER_MIN_CHARS)
-        ) {
-          return;
-        }
-
+        if (!html || html === lastRenderedHtml ||
+          (now - lastRenderAt < AI_PARTIAL_RENDER_INTERVAL_MS && html.length - lastRenderedHtml.length < AI_PARTIAL_RENDER_MIN_CHARS)) return;
         lastRenderedHtml = html;
         lastRenderAt = now;
-        updateAiArticleContent(article.id, html, "");
+        wrotePartial = true;
+        updateAiArticleContent(article.id, html, "", inputHash, providerHash);
       };
-
+      const contentType = response.headers.get("content-type") || "";
       if (response.body && contentType.includes("text/event-stream")) {
         await readResponsesEventStream(response, {
-          onDelta(delta) {
-            rawAiOutput += delta;
-            renderPartialOutput();
-          },
-          onTextDone(text) {
-            finalStreamText = text || finalStreamText;
-          },
-          onCompleted(completedResponse) {
-            finalStreamText = extractAiOutputText(completedResponse) || finalStreamText;
-          },
-        });
-
-        if (!rawAiOutput.trim() && finalStreamText) {
-          rawAiOutput = finalStreamText;
-        }
+          onDelta(delta) { rawAiOutput += delta; renderPartialOutput(); },
+          onTextDone(text) { finalStreamText = text || finalStreamText; },
+          onCompleted(payload) { finalStreamText = extractAiOutputText(payload) || finalStreamText; },
+        }, { signal: controller.signal });
+        rawAiOutput = finalStreamText || rawAiOutput;
       } else {
-        const payload = await readAiResponsePayload(response);
-
-        if (config.aiAuthMode === "cloudflareAccess" && isCloudflareAccessResponse(payload)) {
-          const error = new Error("Cloudflare Access 登录可能已失效。");
-          error.needsAccessLogin = true;
-          throw error;
+        if (!contentType.includes("application/json")) {
+          throw Object.assign(new Error("AI 返回了非 JSON 响应，请检查 Access 登录或上游接口。"), { needsAccessLogin: true });
         }
-
+        const payload = await waitForAi(readAiResponsePayload(response), controller.signal);
+        assertAiCompleted(payload);
         rawAiOutput = extractAiOutputText(payload);
       }
-
+      if (controller.signal.aborted) throw controller.signal.reason;
       const html = renderAiHtml(rawAiOutput, expectedHeading, { allowPartial: false });
-
-      if (!html) {
-        throw new Error("AI 没有返回可显示的内容");
-      }
-
-      updateAiArticleContent(article.id, html, new Date().toISOString());
+      if (!html) throw new Error("AI 没有返回可显示的内容");
+      updateAiArticleContent(article.id, html, new Date().toISOString(), inputHash, providerHash);
     } catch (error) {
-      const config = libraryRef.current.config;
-      const shouldPromptAccessLogin =
-        config.aiAuthMode === "cloudflareAccess" &&
-        (error.needsAccessLogin ||
-          error instanceof TypeError ||
-          ((error.status === 401 || error.status === 403) && !error.hasJsonPayload));
-
-      clearIncompleteAiContent(article.id);
+      if (wrotePartial) {
+        setLibrary(draft => ({ ...draft, articles: draft.articles.map(current =>
+          current.id === article.id ? { ...current, ...previous } : current) }));
+      }
+      const notice = aiFailureNotice(controller.signal.aborted ? controller.signal.reason : error, {
+        aborted: controller.signal.aborted, accessMode: config.aiAuthMode === "cloudflareAccess",
+      });
       setAiStatus({
-        articleId: article.id,
-        message: shouldPromptAccessLogin
-          ? "Cloudflare Access 登录可能已失效。请重新登录后回到阅读器，页面会自动刷新。"
-          : error?.message || "AI 处理失败",
-        loginUrl: shouldPromptAccessLogin ? buildAiHealthUrl(config.aiWorkerUrl) : "",
+        articleId: article.id, message: notice.message,
+        loginUrl: notice.login ? buildAiHealthUrl(config.aiWorkerUrl) : "",
       });
     } finally {
-      setAiStatus((current) =>
-        current.articleId === article.id && !current.message
-          ? { articleId: "", message: "" }
-          : current,
-      );
+      clearTimeout(totalTimer);
+      controller.abort();
+      if (activeAiRef.current === controller) activeAiRef.current = null;
+      setAiStatus(current => current.articleId === article.id && !current.message ? { articleId: "", message: "" } : current);
     }
   }
 
-  function updateAiArticleContent(articleId, html, generatedAt) {
-    setLibrary((draft) => ({
-      ...draft,
-      articles: draft.articles.map((currentArticle) =>
-        currentArticle.id === articleId
-          ? {
-              ...currentArticle,
-              aiContent: html,
-              aiGeneratedAt: generatedAt || currentArticle.aiGeneratedAt || "",
-              aiMode: true,
-              aiPromptVersion: AI_CACHE_VERSION,
-            }
-          : currentArticle,
-      ),
-    }));
-  }
-
-  function clearIncompleteAiContent(articleId) {
-    setLibrary((draft) => ({
-      ...draft,
-      articles: draft.articles.map((currentArticle) =>
-        currentArticle.id === articleId &&
-        currentArticle.aiPromptVersion === AI_CACHE_VERSION &&
-        !currentArticle.aiGeneratedAt
-          ? {
-              ...currentArticle,
-              aiContent: "",
-              aiMode: false,
-              aiPromptVersion: "",
-            }
-          : currentArticle,
-      ),
-    }));
+  function updateAiArticleContent(articleId, html, generatedAt, inputHash, providerHash) {
+    setLibrary(draft => ({ ...draft, articles: draft.articles.map(article =>
+      article.id === articleId ? {
+        ...article, aiContent: html, aiGeneratedAt: generatedAt, aiMode: true,
+        aiPromptVersion: AI_CACHE_VERSION, aiInputHash: inputHash, aiProviderHash: providerHash,
+      } : article) }));
   }
 
   function removeFeed(feedId) {
@@ -783,16 +714,13 @@ function App() {
         />
 
         <ReaderPane
-          aiStatus={
-            aiStatus.articleId === selectedArticle?.id
-              ? aiStatus
-              : { articleId: "", message: "" }
-          }
+          aiStatus={aiStatus}
+          config={library.config}
+          onStopAi={() => activeAiRef.current?.abort(new Error("已停止生成，未保存未完成内容。"))}
           article={selectedArticle}
           feed={library.feeds.find((feed) => feed.id === selectedArticle?.feedId)}
           mobilePane={mobilePane}
           onAccessLogin={openCloudflareAccessLogin}
-          onResetAi={resetAiContent}
           onRunAi={runAiForArticle}
           onReaderScroll={handleReaderScroll}
           onBack={() => setMobilePane("articles")}
@@ -1270,21 +1198,26 @@ function ArticleListPane({
 
 function ReaderPane({
   aiStatus,
+  config,
+  onStopAi,
   article,
   feed,
   mobilePane,
   onAccessLogin,
   onBack,
   onReaderScroll,
-  onResetAi,
   onRunAi,
   onToggleAiMode,
   onToggleStar,
 }) {
   const articleLink = normalizeArticleLink(article?.link);
-  const isAiBusy = aiStatus.articleId === article?.id && !aiStatus.message;
+  const isAiBusy = Boolean(aiStatus.articleId && !aiStatus.message);
+  const isCurrentAiBusy = isAiBusy && aiStatus.articleId === article?.id;
+  const currentInputHash = useMemo(() => article ? aiInputHash(article, config) : "",
+    [article?.content, article?.excerpt, article?.title, config.aiChinesePrompt, config.aiTranslationPrompt, config.aiWorkerUrl]);
   const hasCurrentAiContent = Boolean(
-    article?.aiContent && article?.aiPromptVersion === AI_CACHE_VERSION,
+    article?.aiContent && article?.aiPromptVersion === AI_CACHE_VERSION &&
+    article?.aiInputHash === currentInputHash && (article.aiGeneratedAt || isCurrentAiBusy),
   );
   const isAiMode = Boolean(article?.aiMode && hasCurrentAiContent);
   const displayedHtml =
@@ -1312,6 +1245,13 @@ function ReaderPane({
               {article.publishedAt ? <time>{formatLongDate(article.publishedAt)}</time> : null}
             </div>
             <div className="reader-actions">
+              {isAiBusy ? (
+                <ActionTooltip label="停止生成">
+                  <Button isIconOnly className="reader-action-button" variant="flat" aria-label="停止生成" title="停止生成" onPress={onStopAi}>
+                    <Square size={16} fill="currentColor" />
+                  </Button>
+                </ActionTooltip>
+              ) : null}
               {hasCurrentAiContent && isAiMode ? (
                 <ActionTooltip label="退出 AI 模式">
                   <Button
@@ -1335,9 +1275,7 @@ function ReaderPane({
                     title={hasCurrentAiContent ? "查看 AI 内容" : "AI 总结/翻译"}
                     isDisabled={isAiBusy}
                     onPress={() =>
-                      hasCurrentAiContent
-                        ? onToggleAiMode(article.id, true)
-                        : onRunAi(article)
+                      onRunAi(article)
                     }
                   >
                     <Sparkles size={18} className={isAiBusy ? "spin" : ""} />
@@ -1354,8 +1292,7 @@ function ReaderPane({
                     title="重新生成 AI 内容"
                     isDisabled={isAiBusy}
                     onPress={() => {
-                      onResetAi(article.id);
-                      onRunAi(article);
+                      onRunAi(article, { force: true });
                     }}
                   >
                     <RefreshCw size={18} className={isAiBusy ? "spin" : ""} />
@@ -1404,7 +1341,7 @@ function ReaderPane({
               {article.author ? <span>{article.author}</span> : null}
               {article.publishedAt ? <time>{formatLongDate(article.publishedAt)}</time> : null}
             </div>
-            {aiStatus.message ? (
+            {aiStatus.articleId === article.id && aiStatus.message ? (
               <div className="ai-error">
                 <span>{aiStatus.message}</span>
                 {aiStatus.loginUrl ? (
@@ -1441,21 +1378,15 @@ function normalizeArticleLink(value) {
   }
 }
 
-function currentAiCache(article) {
-  if (!article?.aiContent || article.aiPromptVersion !== AI_CACHE_VERSION) {
-    return {
-      aiContent: "",
-      aiGeneratedAt: "",
-      aiMode: false,
-      aiPromptVersion: "",
-    };
+function currentAiCache(article, source, config) {
+  if (!article?.aiContent || !article.aiGeneratedAt || article.aiPromptVersion !== AI_CACHE_VERSION ||
+      article.aiInputHash !== aiInputHash(source, config)) {
+    return { aiContent: "", aiGeneratedAt: "", aiMode: false, aiPromptVersion: "", aiInputHash: "", aiProviderHash: "" };
   }
-
   return {
-    aiContent: article.aiContent,
-    aiGeneratedAt: article.aiGeneratedAt || "",
-    aiMode: Boolean(article.aiMode),
-    aiPromptVersion: article.aiPromptVersion,
+    aiContent: article.aiContent, aiGeneratedAt: article.aiGeneratedAt,
+    aiMode: Boolean(article.aiMode), aiPromptVersion: article.aiPromptVersion,
+    aiInputHash: article.aiInputHash, aiProviderHash: article.aiProviderHash,
   };
 }
 
@@ -1576,119 +1507,6 @@ async function readAiResponsePayload(response) {
     return JSON.parse(text);
   } catch {
     return { output_text: text };
-  }
-}
-
-async function readResponsesEventStream(response, handlers) {
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let pending = "";
-
-  const processPendingFrames = (flush = false) => {
-    while (true) {
-      const boundary = pending.search(/\r?\n\r?\n/);
-
-      if (boundary === -1) {
-        break;
-      }
-
-      const separator = pending.slice(boundary).match(/^\r?\n\r?\n/)?.[0] || "\n\n";
-      const frame = pending.slice(0, boundary);
-      pending = pending.slice(boundary + separator.length);
-      processResponsesStreamFrame(frame, handlers);
-    }
-
-    if (flush && pending.trim()) {
-      processResponsesStreamFrame(pending, handlers);
-      pending = "";
-    }
-  };
-
-  while (true) {
-    const { done, value } = await reader.read();
-
-    if (done) {
-      break;
-    }
-
-    pending += decoder.decode(value, { stream: true });
-    processPendingFrames(false);
-  }
-
-  pending += decoder.decode();
-  processPendingFrames(true);
-}
-
-function processResponsesStreamFrame(frame, handlers) {
-  const dataLines = [];
-  let eventType = "";
-
-  for (const line of frame.split(/\r?\n/)) {
-    if (!line || line.startsWith(":")) {
-      continue;
-    }
-
-    const colonIndex = line.indexOf(":");
-    const field = colonIndex === -1 ? line : line.slice(0, colonIndex);
-    const value = colonIndex === -1 ? "" : line.slice(colonIndex + 1).replace(/^ /, "");
-
-    if (field === "event") {
-      eventType = value;
-    }
-
-    if (field === "data") {
-      dataLines.push(value);
-    }
-  }
-
-  const data = dataLines.join("\n").trim();
-
-  if (!data || data === "[DONE]") {
-    return;
-  }
-
-  let payload;
-
-  try {
-    payload = JSON.parse(data);
-  } catch {
-    if (eventType.includes("delta")) {
-      handlers.onDelta?.(data);
-    }
-    return;
-  }
-
-  dispatchResponsesStreamPayload(payload, eventType, handlers);
-}
-
-function dispatchResponsesStreamPayload(payload, eventType, handlers) {
-  const type = String(payload?.type || eventType || "");
-  const errorMessage =
-    typeof payload?.error === "string" ? payload.error : payload?.error?.message || "";
-
-  if (errorMessage || type.includes("error") || type === "response.failed") {
-    throw new Error(errorMessage || "AI 流式请求失败");
-  }
-
-  if (type === "response.output_text.delta" && typeof payload.delta === "string") {
-    handlers.onDelta?.(payload.delta);
-    return;
-  }
-
-  if (type === "response.output_text.done" && typeof payload.text === "string") {
-    handlers.onTextDone?.(payload.text);
-    return;
-  }
-
-  if (type === "response.completed") {
-    handlers.onCompleted?.(payload.response || payload);
-    return;
-  }
-
-  const chatDelta = payload?.choices?.[0]?.delta?.content;
-
-  if (typeof chatDelta === "string") {
-    handlers.onDelta?.(chatDelta);
   }
 }
 

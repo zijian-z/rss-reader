@@ -61,3 +61,58 @@ test('missing provider settings fail before contacting an upstream', async (t) =
   }
   assert.equal(upstream.mock.callCount(), 0);
 });
+
+const provider = { AI_API_KEY: 'test-key', AI_BASE_URL: 'https://provider.example/v1', AI_MODEL: 'fixed/model', AI_MAX_OUTPUT_TOKENS: '2000' };
+const aiRequest = payload => request('/ai/responses', { method: 'POST', body: JSON.stringify(payload) });
+
+test('paid API enforces configured model/token ceiling and a strict field allowlist', async (t) => {
+  const upstream = t.mock.method(globalThis, 'fetch', async (_url, init) => {
+    const payload = JSON.parse(init.body);
+    assert.deepEqual(Object.keys(payload).sort(), ['input', 'instructions', 'max_output_tokens', 'model', 'store', 'stream']);
+    assert.equal(payload.model, provider.AI_MODEL);
+    assert.equal(payload.max_output_tokens, 2000);
+    assert.equal(payload.store, false);
+    return Response.json({ status: 'completed', output: [] });
+  });
+  const response = await worker.fetch(aiRequest({ input: 'article', model: 'very/expensive', max_output_tokens: 1000000, store: true, tools: [{ type: 'web_search' }], provider: { order: ['anything'] } }), provider);
+  assert.equal(response.status, 200);
+  assert.equal(upstream.mock.callCount(), 1);
+});
+
+test('oversized, structured and invalid inputs never reach the paid API', async (t) => {
+  const upstream = t.mock.method(globalThis, 'fetch', () => { throw new Error('unexpected API call'); });
+  for (const [payload, status] of [
+    [{ input: 'a'.repeat(60001) }, 413],
+    [{ input: 'article', instructions: 'a'.repeat(16001) }, 413],
+    [{ input: [{ role: 'user', content: 'unbounded conversation' }] }, 400],
+    [{ input: '' }, 400],
+    [[], 400],
+    [{ input: 'article', extra: 'a'.repeat(400000) }, 413],
+  ]) {
+    assert.equal((await worker.fetch(aiRequest(payload), provider)).status, status);
+  }
+  assert.equal(upstream.mock.callCount(), 0);
+});
+
+test('health and responses identify provider changes without exposing credentials', async (t) => {
+  t.mock.method(globalThis, 'fetch', async () => Response.json({ status: 'completed' }));
+  const original = await (await worker.fetch(request('/ai/health'), provider)).json();
+  const changed = await (await worker.fetch(request('/ai/health'), { ...provider, AI_MODEL: 'new/model' })).json();
+  assert.notEqual(original.providerHash, changed.providerHash);
+  assert.doesNotMatch(JSON.stringify(original), /test-key|fixed\/model/);
+  const result = await worker.fetch(aiRequest({ input: 'article' }), provider);
+  assert.equal(result.headers.get('x-ai-provider-hash'), original.providerHash);
+});
+
+test('cancelling an AI response aborts the paid upstream and closes its stream', async (t) => {
+  let upstreamSignal;
+  let cancelled = false;
+  t.mock.method(globalThis, 'fetch', async (_url, init) => {
+    upstreamSignal = init.signal;
+    return new Response(new ReadableStream({ cancel() { cancelled = true; } }), { headers: { 'content-type': 'text/event-stream' } });
+  });
+  const result = await worker.fetch(aiRequest({ input: 'article', stream: true }), provider);
+  await result.body.cancel('user stopped');
+  assert.equal(upstreamSignal.aborted, true);
+  assert.equal(cancelled, true);
+});

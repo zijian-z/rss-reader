@@ -37,6 +37,7 @@
     "concurrently": "latest",
     "electron": "latest",
     "electron-builder": "latest",
+    "happy-dom": "21.0.4",
     "tailwindcss": "latest",
     "vite": "latest",
     "wait-on": "latest",

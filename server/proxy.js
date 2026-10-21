@@ -1,3 +1,6 @@
+import { waitForAi } from "../shared/ai-timeouts.js";
+import { MAX_AI_CONTENT_CHARS, MAX_AI_PROMPT_CHARS, MAX_AI_REQUEST_BYTES, AI_FIRST_RESPONSE_TIMEOUT_MS, AI_IDLE_TIMEOUT_MS, AI_TOTAL_TIMEOUT_MS } from "../shared/ai-limits.js";
+
 const DEFAULT_MAX_BYTES = 8 * 1024 * 1024;
 
 export default {
@@ -28,7 +31,12 @@ export async function handleProxyRequest(request, env = {}) {
   }
 
   if (requestUrl.pathname === "/ai/health") {
-    return jsonResponse({ ok: true, ai: true }, 200, config);
+    try {
+      const aiConfig = readAiConfig(env);
+      return jsonResponse({ ok: true, ai: true, providerHash: await providerHash(aiConfig) }, 200, config);
+    } catch (error) {
+      return jsonResponse({ error: error.message }, 500, config);
+    }
   }
 
   if (requestUrl.pathname === "/ai/responses") {
@@ -93,42 +101,68 @@ async function handleAiRequest(request, config) {
     return jsonResponse({ error: error.message }, 500, config);
   }
 
+  const controller = new AbortController();
+  const abort = () => controller.abort(request.signal.reason);
+  request.signal.addEventListener("abort", abort, { once: true });
+  if (request.signal.aborted) abort();
+  const totalTimer = setTimeout(() => controller.abort(new Error("AI request timed out")), AI_TOTAL_TIMEOUT_MS);
+  const firstTimer = setTimeout(() => controller.abort(new Error("AI first response timed out")), AI_FIRST_RESPONSE_TIMEOUT_MS);
+  let streaming = false;
+  const cleanup = () => {
+    clearTimeout(firstTimer);
+    clearTimeout(totalTimer);
+    request.signal.removeEventListener("abort", abort);
+  };
   try {
-    const payload = await normalizeAiRequestPayload(request, aiConfig);
-    const upstream = await fetch(`${aiConfig.baseUrl}/responses`, {
+    const payload = await normalizeAiRequestPayload(request, aiConfig, controller.signal);
+    const cacheHash = await providerHash(aiConfig);
+    const upstream = await waitForAi(fetch(`${aiConfig.baseUrl}/responses`, {
       method: "POST",
+      signal: controller.signal,
       headers: {
         authorization: `Bearer ${aiConfig.apiKey}`,
         "content-type": "application/json",
       },
       body: JSON.stringify(payload),
-    });
+    }), controller.signal, AI_FIRST_RESPONSE_TIMEOUT_MS);
+
+    clearTimeout(firstTimer);
 
     if (!upstream.ok) {
-      return jsonResponse(await upstreamErrorPayload(upstream), upstream.status, config);
+      return jsonResponse(await waitForAi(upstreamErrorPayload(upstream), controller.signal), upstream.status, config);
     }
 
-    if (payload.stream) {
-      return new Response(upstream.body, {
+    if (payload.stream && upstream.ok) {
+      if (!upstream.body || !(upstream.headers.get("content-type") || "").includes("text/event-stream")) {
+        throw new Error("AI upstream did not return an event stream");
+      }
+      streaming = true;
+      return new Response(streamAiBody(upstream.body, controller, cleanup), {
         status: upstream.status,
         headers: {
           ...corsHeaders(config),
-          "content-type": upstream.headers.get("content-type") || "text/event-stream; charset=utf-8",
+          "content-type": "text/event-stream; charset=utf-8",
+          "x-ai-provider-hash": cacheHash,
           "cache-control": "no-store, no-transform",
         },
       });
     }
 
-    return new Response(await upstream.text(), {
+    return new Response(await waitForAi(upstream.text(), controller.signal), {
       status: upstream.status,
       headers: {
         ...corsHeaders(config),
-        "content-type": upstream.headers.get("content-type") || "application/json; charset=utf-8",
+        "content-type": "application/json; charset=utf-8",
+        "x-ai-provider-hash": cacheHash,
         "cache-control": "no-store",
       },
     });
   } catch (error) {
-    return jsonResponse({ error: error.message || "AI request failed" }, 400, config);
+    const status = error.status || (controller.signal.aborted || /超时|timed out/.test(error.message) ? 504 : 502);
+    controller.abort(error);
+    return jsonResponse({ error: error.message || "AI request failed" }, status, config);
+  } finally {
+    if (!streaming) cleanup();
   }
 }
 
@@ -150,24 +184,87 @@ function readAiConfig(env = {}) {
     apiKey: String(env.AI_API_KEY || ""),
     baseUrl: normalizeBaseUrl(env.AI_BASE_URL),
     model: String(env.AI_MODEL).trim(),
-    maxOutputTokens: positiveNumber(env.AI_MAX_OUTPUT_TOKENS, 12000),
+    maxOutputTokens: Math.max(1, Math.floor(positiveNumber(env.AI_MAX_OUTPUT_TOKENS, 12000))),
   };
 }
 
-async function normalizeAiRequestPayload(request, aiConfig) {
-  const payload = await request.json();
+function invalidRequest(message, status = 400) {
+  return Object.assign(new Error(message), { status });
+}
 
-  if (!payload || typeof payload !== "object") {
-    throw new Error("Invalid AI request payload");
+async function normalizeAiRequestPayload(request, aiConfig, signal) {
+  if (Number(request.headers.get("content-length")) > MAX_AI_REQUEST_BYTES) {
+    throw invalidRequest("AI request body is too large", 413);
   }
-
+  const reader = request.body?.getReader();
+  const decoder = new TextDecoder();
+  let text = "";
+  let bytes = 0;
+  if (reader) {
+    try {
+      while (true) {
+        const { done, value } = await waitForAi(reader.read(), signal);
+        if (done) break;
+        bytes += value.byteLength;
+        if (bytes > MAX_AI_REQUEST_BYTES) throw invalidRequest("AI request body is too large", 413);
+        text += decoder.decode(value, { stream: true });
+      }
+      text += decoder.decode();
+    } catch (error) {
+      reader.cancel().catch(() => {});
+      throw error;
+    } finally {
+      reader.releaseLock();
+    }
+  }
+  let payload;
+  try { payload = JSON.parse(text); } catch { throw invalidRequest("Invalid JSON payload"); }
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) throw invalidRequest("Invalid AI request payload");
+  if (typeof payload.input !== "string" || !payload.input.trim()) throw invalidRequest("input must be non-empty article text");
+  if (payload.input.length > MAX_AI_CONTENT_CHARS) throw invalidRequest("Article exceeds 60000 characters; no content was truncated", 413);
+  if (payload.instructions !== undefined && typeof payload.instructions !== "string") throw invalidRequest("instructions must be text");
+  if ((payload.instructions || "").length > MAX_AI_PROMPT_CHARS) throw invalidRequest("instructions are too long", 413);
   return {
-    ...payload,
-    model: String(payload.model || aiConfig.model),
-    max_output_tokens: positiveNumber(payload.max_output_tokens, aiConfig.maxOutputTokens),
-    store: Boolean(payload.store),
-    stream: Boolean(payload.stream),
+    // Only these fields can reach the paid API. Ignore tools, provider overrides, storage, etc.
+    input: payload.input,
+    instructions: payload.instructions || "",
+    model: aiConfig.model,
+    max_output_tokens: Math.min(aiConfig.maxOutputTokens, Math.max(1, Math.floor(positiveNumber(payload.max_output_tokens, aiConfig.maxOutputTokens)))),
+    store: false,
+    stream: payload.stream === true,
   };
+}
+
+async function providerHash(config) {
+  const value = JSON.stringify([config.baseUrl, config.model, config.maxOutputTokens]);
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function streamAiBody(body, controller, cleanup) {
+  const reader = body.getReader();
+  let finished = false;
+  const finish = () => { if (!finished) { finished = true; cleanup(); } };
+  return new ReadableStream({
+    async pull(stream) {
+      const timer = setTimeout(() => controller.abort(new Error("AI stream idle timeout")), AI_IDLE_TIMEOUT_MS);
+      try {
+        const { done, value } = await waitForAi(reader.read(), controller.signal);
+        if (done) { finish(); reader.releaseLock(); stream.close(); }
+        else stream.enqueue(value);
+      } catch (error) {
+        finish();
+        controller.abort(error);
+        reader.cancel().catch(() => {});
+        stream.error(error);
+      } finally { clearTimeout(timer); }
+    },
+    async cancel(reason) {
+      controller.abort(reason);
+      finish();
+      await reader.cancel(reason);
+    },
+  });
 }
 
 async function upstreamErrorPayload(upstream) {
@@ -183,6 +280,7 @@ async function upstreamErrorPayload(upstream) {
 
 function normalizeBaseUrl(value) {
   const url = new URL(String(value).trim());
+  if (!["http:", "https:"].includes(url.protocol)) throw new Error("AI_BASE_URL must use http or https");
   url.pathname = url.pathname.replace(/\/+$/, "");
   url.search = "";
   url.hash = "";
@@ -228,6 +326,7 @@ function corsHeaders(config) {
     "access-control-allow-origin": config.allowOrigin,
     "access-control-allow-methods": "GET, POST, OPTIONS",
     "access-control-allow-headers": "content-type",
+    "access-control-expose-headers": "x-ai-provider-hash",
     vary: "origin",
   };
 

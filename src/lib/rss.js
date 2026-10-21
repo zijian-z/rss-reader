@@ -254,6 +254,24 @@ function isSafeUrl(value) {
   }
 }
 
+// Keep block boundaries and code whitespace for translation without sending article HTML.
+export function extractAiText(html) {
+  const doc = new DOMParser().parseFromString(html || "", "text/html");
+  const blocks = new Set(["P", "DIV", "SECTION", "ARTICLE", "H1", "H2", "H3", "H4", "H5", "H6", "BLOCKQUOTE", "UL", "OL", "TABLE", "TR"]);
+  function visit(node) {
+    if (node.nodeType === 3) return node.textContent.replace(/\s+/g, " ");
+    if (node.nodeType !== 1) return "";
+    if (["SCRIPT", "STYLE", "NOSCRIPT"].includes(node.tagName)) return "";
+    if (node.tagName === "PRE") return `\n\n\`\`\`\n${node.textContent}\n\`\`\`\n\n`;
+    if (node.tagName === "BR") return "\n";
+    const children = Array.from(node.childNodes).map(visit).join("");
+    if (node.tagName === "LI") return `\n- ${children.trim()}\n`;
+    if (["TD", "TH"].includes(node.tagName)) return `${children} | `;
+    return blocks.has(node.tagName) ? `\n\n${children.trim()}\n\n` : children;
+  }
+  return Array.from(doc.body.childNodes).map(visit).join("").trim();
+}
+
 export function stripHtml(html) {
   const parser = new DOMParser();
   const doc = parser.parseFromString(html || "", "text/html");
