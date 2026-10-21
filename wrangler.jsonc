@@ -2,7 +2,7 @@
   "name": "rss-reader-proxy",
   "main": "server/proxy.js",
   "compatibility_date": "2026-05-12",
-  "workers_dev": true,
+  "workers_dev": false,
   "$schema": "./node_modules/wrangler/config-schema.json",
   "build": {
     "command": "npm run build",
@@ -17,5 +17,6 @@
     "binding": "ASSETS",
     "run_worker_first": true
   },
-  "keep_vars": true
+  "keep_vars": true,
+  "preview_urls": false
 }

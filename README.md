@@ -66,7 +66,7 @@ npm run deploy
 
 `npm run deploy` 和 `npx wrangler deploy` 都会先执行 `npm run build`，再将 `dist/` 和后端一起发布。不要只上传 `dist/`，否则不会包含 RSS / AI 接口。
 
-默认继续使用现有 Worker 名称 `rss-reader-proxy`，避免意外创建新 Worker；如需更换，在 `wrangler.jsonc` 修改 `name`，并为新 Worker 重新配置密钥。无需绑定固定域名，访问部署返回的 workers.dev 地址或自行绑定的域名即可。
+默认继续使用现有 Worker 名称 `rss-reader-proxy`，避免意外创建新 Worker；如需更换，在 `wrangler.jsonc` 修改 `name`，并为新 Worker 重新配置密钥。请先在 Cloudflare 控制台为该 Worker 绑定自己的域名，部署后通过该域名访问。配置明确设置 `workers_dev: false` 和 `preview_urls: false`，关闭默认 workers.dev 与版本预览入口，避免绕过只配置在自定义域名上的 Access。域名继续在控制台管理，无需写死在源代码中。
 
 如果在 Cloudflare 控制台连接 Git 仓库后手动触发构建部署，使用：
 
@@ -127,6 +127,8 @@ AI 的文章类型由前端按标题判断：标题含中文字符时使用“�
 ## 保护 AI 接口
 
 如果使用自己的模型 key，可在 Cloudflare Zero Trust 中给阅读器实际访问域名的 `/ai/*` 路径创建 Access 应用，或保护整个站点。登录入口为同一站点的 `/ai/health`。同源请求会自动携带本站 Cookie，无需跨域 CORS 配置。前端会识别 Access 登录跳转并显示登录按钮，即使设置中的 AI 鉴权没有切换也能引导登录；无法区分原因的网络错误会提示检查网络并提供登录入口。
+
+部署后请在 Worker 的 Settings → Domains & Routes 确认 workers.dev 和 Version/Preview URLs 已禁用；使用无痕窗口确认自定义域名首页仍公开、`/ai/health` 要求登录。
 
 ## GitHub Actions
 
